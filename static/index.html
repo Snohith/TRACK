@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>StatsArena | Live Matches & Odds Explorer</title>
+  
+  <!-- Premium Fonts: Inter & Plus Jakarta Sans -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+  
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Top Header Navigation -->
+  <header class="app-header">
+    <div class="header-container">
+      <div class="brand-section">
+        <div class="brand-logo">
+          <i class="fa-solid fa-bolt-lightning"></i>
+        </div>
+        <div class="brand-info">
+          <h1>StatsArena</h1>
+          <div class="status-indicator">
+            <span class="pulse-dot" id="pulseDot"></span>
+            <span id="autoScraperStatus">Auto-Scraper Active (Every 1h)</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <div class="tz-badge">
+          <i class="fa-solid fa-globe"></i> <span>IST (UTC+5:30)</span>
+        </div>
+        <button id="syncNowBtn" class="btn-sync" onclick="triggerManualSync()" title="Scrape and check for new matches now">
+          <i class="fa-solid fa-arrows-rotate" id="syncIcon"></i>
+          <span class="btn-text">Sync Now</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Scraper Status Banner -->
+  <div class="scraper-banner-wrapper">
+    <div class="scraper-banner" id="scraperBanner">
+      <div class="banner-left">
+        <span class="banner-badge" id="scraperStateBadge"><i class="fa-solid fa-circle-check"></i> Finished</span>
+        <span class="banner-text" id="scraperStatusText">Scraper completed. All 239 matches updated.</span>
+      </div>
+      <div class="banner-right">
+        <span class="banner-meta" id="lastScrapeMeta"><i class="fa-regular fa-clock"></i> Last scraped: 06:00 PM IST</span>
+        <span class="banner-meta next-run" id="nextScrapeMeta"><i class="fa-solid fa-hourglass-half"></i> Next in 58m</span>
+      </div>
+      <!-- Progress Bar (Visible during scraping) -->
+      <div class="banner-progress" id="bannerProgress" style="display: none;">
+        <div class="banner-progress-bar" id="bannerProgressBar" style="width: 0%;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main App Container -->
+  <main class="main-content">
+    
+    <!-- Sport Navigation Tabs -->
+    <div class="tabs-container">
+      <div class="sport-tabs">
+        <button class="tab-btn active" id="tabTennis" onclick="switchSport('tennis')">
+          <span class="tab-icon">🎾</span>
+          <span class="tab-title">Tennis</span>
+          <span class="tab-badge" id="tennisCountBadge">0</span>
+        </button>
+        <button class="tab-btn" id="tabFootball" onclick="switchSport('football')">
+          <span class="tab-icon">⚽</span>
+          <span class="tab-title">Football</span>
+          <span class="tab-badge" id="footballCountBadge">0</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Filters & Search Toolbar -->
+    <section class="toolbar-section">
+      <div class="search-wrapper">
+        <i class="fa-solid fa-magnifying-glass search-icon"></i>
+        <input 
+          type="text" 
+          id="searchInput" 
+          placeholder="Search player, team, tournament, venue..." 
+          oninput="handleSearchInput()" 
+        />
+        <button id="clearSearchBtn" class="btn-clear" onclick="clearSearch()" style="display: none;">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <div class="filters-row">
+        <!-- Tournament / League Dropdown -->
+        <div class="filter-item">
+          <select id="leagueSelect" onchange="applyFilters()">
+            <option value="all">🏆 All Tournaments / Leagues</option>
+          </select>
+        </div>
+
+        <!-- Date Filter -->
+        <div class="filter-item">
+          <select id="dateSelect" onchange="applyFilters()">
+            <option value="all">📅 All Match Dates</option>
+            <option value="today">Today's Matches (IST)</option>
+            <option value="tomorrow">Tomorrow's Matches (IST)</option>
+            <option value="upcoming">Upcoming (Next 3 Days)</option>
+          </select>
+        </div>
+
+        <!-- Smart Timing Sort Options -->
+        <div class="filter-item">
+          <select id="sortSelect" onchange="applyFilters()">
+            <option value="soonest">⏰ Starting Soonest (Live & Upcoming First)</option>
+            <option value="asc">⏰ Earliest Match Time (Ascending)</option>
+            <option value="desc">⏰ Latest Match Time (Descending)</option>
+            <option value="value">🔥 Highest Value (+EV Edge)</option>
+          </select>
+        </div>
+
+        <!-- Value Bets Toggle -->
+        <div class="filter-item toggle-item">
+          <label class="toggle-switch">
+            <input type="checkbox" id="valueOnlyToggle" onchange="applyFilters()">
+            <span class="slider"></span>
+          </label>
+          <span class="toggle-label"><i class="fa-solid fa-fire text-amber"></i> Value Bets (+EV)</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Active Filter Summary & Result Count -->
+    <div class="results-meta">
+      <div class="meta-count" id="matchesSummary">Showing 0 matches sorted by start time</div>
+      <div class="meta-time-hint"><i class="fa-solid fa-clock-rotate-left"></i> All match timings displayed in 12-Hour IST</div>
+    </div>
+
+    <!-- Loading State -->
+    <div id="loadingContainer" class="loading-state" style="display: none;">
+      <div class="spinner"></div>
+      <p>Loading latest odds & live match schedules...</p>
+    </div>
+
+    <!-- Empty State -->
+    <div id="emptyContainer" class="empty-state" style="display: none;">
+      <i class="fa-solid fa-calendar-xmark empty-icon"></i>
+      <h3>No matches found</h3>
+      <p id="emptyMessage">Try adjusting your search terms or filters.</p>
+      <button class="btn-reset" onclick="resetFilters()">Reset All Filters</button>
+    </div>
+
+    <!-- Match Cards Grid (Reference UI Layout) -->
+    <div id="matchesGrid" class="matches-grid">
+      <!-- Dynamically populated match cards -->
+    </div>
+
+  </main>
+
+  <!-- Toast Notification System -->
+  <div id="toast" class="toast-notification"></div>
+
+  <!-- Scripts -->
+  <script src="app.js"></script>
+</body>
+</html>
