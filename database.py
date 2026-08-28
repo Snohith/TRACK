@@ -42,11 +42,18 @@ def init_db():
             fair_away REAL,
             has_value INTEGER DEFAULT 0,
             value_side TEXT,
+            value_edge REAL DEFAULT 0.0,
             raw_json TEXT,
             created_at TEXT,
             updated_at TEXT
         )
         """)
+
+        # Add value_edge column dynamically if upgrading existing database
+        try:
+            cursor.execute("ALTER TABLE matches ADD COLUMN value_edge REAL DEFAULT 0.0")
+        except Exception:
+            pass
 
         cursor.execute("""
         CREATE INDEX IF NOT EXISTS idx_sport_time ON matches (sport, start_timestamp ASC);
@@ -94,7 +101,7 @@ def upsert_match(match_data: Dict[str, Any]) -> bool:
             home_prob, draw_prob, away_prob,
             market_home, market_draw, market_away,
             fair_home, fair_draw, fair_away,
-            has_value, value_side,
+            has_value, value_side, value_edge,
             raw_json, created_at, updated_at
         ) VALUES (
             :id, :url, :sport, :league, :location,
@@ -103,7 +110,7 @@ def upsert_match(match_data: Dict[str, Any]) -> bool:
             :home_prob, :draw_prob, :away_prob,
             :market_home, :market_draw, :market_away,
             :fair_home, :fair_draw, :fair_away,
-            :has_value, :value_side,
+            :has_value, :value_side, :value_edge,
             :raw_json, :created_at, :updated_at
         )
         ON CONFLICT(id) DO UPDATE SET
@@ -130,6 +137,7 @@ def upsert_match(match_data: Dict[str, Any]) -> bool:
             fair_away = excluded.fair_away,
             has_value = excluded.has_value,
             value_side = excluded.value_side,
+            value_edge = excluded.value_edge,
             raw_json = excluded.raw_json,
             updated_at = excluded.updated_at
         """, match_data_copy)
@@ -178,7 +186,7 @@ def get_matches(
                home_prob, draw_prob, away_prob,
                market_home, market_draw, market_away,
                fair_home, fair_draw, fair_away,
-               has_value, value_side, created_at, updated_at
+               has_value, value_side, value_edge, created_at, updated_at
         FROM matches
         {where_clause}
         ORDER BY start_timestamp {direction}

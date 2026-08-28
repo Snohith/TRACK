@@ -117,24 +117,54 @@ def parse_iso_time(time_str: Optional[str]) -> tuple[str, int]:
         return time_str, int(now.timestamp())
 
 
+def calculate_ev(prob_pct: Optional[float], decimal_odds: Optional[float]) -> float:
+    """
+    Core EV calculation:
+    EV = p * O - 1
+    where:
+      p = model estimated win probability (as decimal 0.0 - 1.0)
+      O = decimal market odds
+      EV > 0 = profitable expected value (+EV)
+    Returns EV edge percentage rounded to 1 decimal place (e.g. 10.0 for +10.0% EV)
+    """
+    if prob_pct is None or decimal_odds is None or decimal_odds <= 1.0 or prob_pct <= 0:
+        return 0.0
+    p = float(prob_pct) / 100.0
+    ev = (p * float(decimal_odds)) - 1.0
+    return round(ev * 100.0, 1)
+
+
 def determine_value_bet(
+    sport: str,
     home_prob: Optional[float], away_prob: Optional[float], draw_prob: Optional[float],
-    m_home: Optional[float], m_away: Optional[float], m_draw: Optional[float],
-    f_home: Optional[float], f_away: Optional[float], f_draw: Optional[float]
-) -> tuple[int, Optional[str]]:
+    m_home: Optional[float], m_away: Optional[float], m_draw: Optional[float]
+) -> tuple[int, Optional[str], float]:
     candidates = []
-    if m_home and f_home and f_home > 0 and m_home > f_home * 1.03 and (home_prob or 0) >= 20:
-        candidates.append(("home", (m_home / f_home) - 1.0))
-    if m_away and f_away and f_away > 0 and m_away > f_away * 1.03 and (away_prob or 0) >= 20:
-        candidates.append(("away", (m_away / f_away) - 1.0))
-    if m_draw and f_draw and f_draw > 0 and m_draw > f_draw * 1.03 and (draw_prob or 0) >= 20:
-        candidates.append(("draw", (m_draw / f_draw) - 1.0))
+
+    # Home side EV
+    if home_prob and m_home:
+        ev_home = calculate_ev(home_prob, m_home)
+        if ev_home > 0:
+            candidates.append(("home", ev_home))
+
+    # Away side EV
+    if away_prob and m_away:
+        ev_away = calculate_ev(away_prob, m_away)
+        if ev_away > 0:
+            candidates.append(("away", ev_away))
+
+    # Football 3-way Draw EV
+    if sport == "football" and draw_prob and m_draw:
+        ev_draw = calculate_ev(draw_prob, m_draw)
+        if ev_draw > 0:
+            candidates.append(("draw", ev_draw))
 
     if candidates:
         candidates.sort(key=lambda x: x[1], reverse=True)
-        return 1, candidates[0][0]
+        best_side, best_ev = candidates[0]
+        return 1, best_side, best_ev
 
-    return 0, None
+    return 0, None, 0.0
 
 
 def _safe_round(val: Any, decimals: int) -> Any:
@@ -211,10 +241,10 @@ async def fetch_match_data(
 
                     odds = _extract_odds_data(data)
 
-                    has_val, val_side = determine_value_bet(
+                    has_val, val_side, val_edge = determine_value_bet(
+                        sport,
                         odds["h_prob"], odds["a_prob"], odds["d_prob"],
-                        odds["m_home"], odds["m_away"], odds["m_draw"],
-                        odds["f_home"], odds["f_away"], odds["f_draw"]
+                        odds["m_home"], odds["m_away"], odds["m_draw"]
                     )
 
                     await asyncio.sleep(0.12)
@@ -243,6 +273,7 @@ async def fetch_match_data(
                         "fair_away": _safe_round(odds["f_away"], 2),
                         "has_value": has_val,
                         "value_side": val_side,
+                        "value_edge": val_edge,
                         "raw_json": json.dumps(data)
                     }
 

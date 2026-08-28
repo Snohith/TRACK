@@ -401,7 +401,12 @@ function sortMatchesSmart(matches, sortMode) {
   } else if (sortMode === 'desc') {
     return enriched.sort((a, b) => b._matchTimeMs - a._matchTimeMs);
   } else if (sortMode === 'value') {
-    return enriched.sort((a, b) => (b.has_value || 0) - (a.has_value || 0) || a._matchTimeMs - b._matchTimeMs);
+    return enriched.sort((a, b) => {
+      const valA = a.has_value ? (a.value_edge || 0.1) : -999;
+      const valB = b.has_value ? (b.value_edge || 0.1) : -999;
+      if (valB !== valA) return valB - valA;
+      return a._matchTimeMs - b._matchTimeMs;
+    });
   }
 
   return enriched;
@@ -579,6 +584,8 @@ function createMatchCardHTML(m) {
   let marketOddsValues = '';
   let fairOddsValues = '';
 
+  const edgeLabel = m.value_edge ? ` +${m.value_edge}%` : '';
+
   if (isTennis || !m.market_draw) {
     marketOddsValues = `
       <div class="odds-val-item"><span>${mHome}</span></div>
@@ -587,11 +594,11 @@ function createMatchCardHTML(m) {
     fairOddsValues = `
       <div class="odds-val-item">
         <span>${fHome}</span>
-        ${valueSide === 'home' ? '<span class="val-edge-tag">VALUE</span>' : ''}
+        ${valueSide === 'home' ? `<span class="val-edge-tag" title="Expected Value: +${m.value_edge || 0}%">VALUE${edgeLabel}</span>` : ''}
       </div>
       <div class="odds-val-item" style="text-align:right;">
         <span>${fAway}</span>
-        ${valueSide === 'away' ? '<span class="val-edge-tag">VALUE</span>' : ''}
+        ${valueSide === 'away' ? `<span class="val-edge-tag" title="Expected Value: +${m.value_edge || 0}%">VALUE${edgeLabel}</span>` : ''}
       </div>
     `;
   } else {
@@ -603,15 +610,15 @@ function createMatchCardHTML(m) {
     fairOddsValues = `
       <div class="odds-val-item">
         <span style="font-size:15px;">${fHome}</span>
-        ${valueSide === 'home' ? '<span class="val-edge-tag">VAL</span>' : ''}
+        ${valueSide === 'home' ? `<span class="val-edge-tag" title="Expected Value: +${m.value_edge || 0}%">VAL${edgeLabel}</span>` : ''}
       </div>
       <div class="odds-val-item" style="text-align:center;">
         <span style="font-size:15px; color:#64748B;">${fDraw}</span>
-        ${valueSide === 'draw' ? '<span class="val-edge-tag">VAL</span>' : ''}
+        ${valueSide === 'draw' ? `<span class="val-edge-tag" title="Expected Value: +${m.value_edge || 0}%">VAL${edgeLabel}</span>` : ''}
       </div>
       <div class="odds-val-item" style="text-align:right;">
         <span style="font-size:15px;">${fAway}</span>
-        ${valueSide === 'away' ? '<span class="val-edge-tag">VAL</span>' : ''}
+        ${valueSide === 'away' ? `<span class="val-edge-tag" title="Expected Value: +${m.value_edge || 0}%">VAL${edgeLabel}</span>` : ''}
       </div>
     `;
   }
