@@ -7,6 +7,11 @@
  * - Seamless Dual-Mode: Live Dynamic Backend + Zero-Config GitHub Pages Fallback
  */
 
+const isStaticHost = typeof window !== 'undefined' && (
+  window.location.hostname.includes('github.io') ||
+  window.location.protocol === 'file:'
+);
+
 const state = {
   sport: 'tennis',
   search: '',
@@ -19,7 +24,7 @@ const state = {
   leaguesCache: { tennis: [], football: [] },
   isLoading: false,
   isScrapingActive: false,
-  isStaticMode: false,
+  isStaticMode: isStaticHost,
   searchDebounceTimer: null
 };
 
@@ -35,8 +40,10 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 async function initApp() {
-  await fetchMatches();
-  if (!state.isStaticMode) {
+  if (state.isStaticMode) {
+    await checkStaticDataFallback();
+  } else {
+    await fetchMatches();
     pollScraperStatus();
   }
 }
