@@ -363,12 +363,16 @@ body {
   background: white;
   border-radius: 18px;
   border: 1px solid var(--border-color);
-  padding: 16px;
+  padding: 14px 18px;
   margin-bottom: 18px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+}
+
+.toolbar-content {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+  width: 100%;
 }
 
 .search-wrapper {
@@ -418,40 +422,56 @@ body {
 }
 
 .filters-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: 10px;
+  display: flex;
   align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.filter-item {
+  flex: 1 1 auto;
+  min-width: 140px;
 }
 
 .filter-item select {
   width: 100%;
-  padding: 10px 12px;
+  padding: 9px 12px;
+  border-radius: 12px;
   border: 1.5px solid var(--border-color);
-  border-radius: 10px;
+  background: #F8FAFC;
+  color: var(--text-primary);
   font-family: inherit;
   font-size: 13px;
   font-weight: 500;
-  background-color: white;
-  color: var(--text-primary);
-  outline: none;
   cursor: pointer;
-  transition: border-color 0.2s;
+  outline: none;
+  transition: all 0.2s;
 }
 
-.filter-item select:focus {
+.filter-item select:focus,
+.filter-item select:hover {
   border-color: var(--brand-primary);
+  background: white;
 }
 
 .toggle-item {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   background: #F8FAFC;
-  padding: 8px 12px;
-  border-radius: 10px;
-  border: 1px solid var(--border-color);
+  padding: 9px 14px;
+  border-radius: 12px;
+  border: 1.5px solid var(--border-color);
   cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  transition: all 0.2s;
+}
+
+.toggle-item:hover {
+  background: #F1F5F9;
+  border-color: #CBD5E1;
 }
 
 .toggle-switch {
@@ -540,7 +560,7 @@ input:checked + .slider:before {
    ========================================================================== */
 .matches-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
   gap: 20px;
 }
 
@@ -555,6 +575,7 @@ input:checked + .slider:before {
   flex-direction: column;
   position: relative;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
+  min-width: 0;
 }
 
 .match-card:hover {
@@ -578,9 +599,9 @@ input:checked + .slider:before {
 .league-badge {
   background: var(--brand-light);
   color: var(--brand-primary);
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 600;
-  padding: 4px 12px;
+  padding: 4px 10px;
   border-radius: var(--radius-pill);
   display: inline-flex;
   align-items: center;
@@ -588,17 +609,19 @@ input:checked + .slider:before {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 170px;
+  max-width: 60%;
+  flex-shrink: 1;
 }
 
 .card-time-wrapper {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-muted);
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .live-tag {
@@ -625,7 +648,7 @@ input:checked + .slider:before {
 .contenders-row {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   margin-bottom: 6px;
 }
@@ -639,17 +662,18 @@ input:checked + .slider:before {
 }
 
 .avatar-circle {
-  width: 54px;
-  height: 54px;
+  width: 52px;
+  height: 52px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 700;
-  font-size: 17px;
+  font-size: 16px;
   margin-bottom: 6px;
   overflow: hidden;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+  flex-shrink: 0;
 }
 
 .avatar-circle img {
@@ -669,13 +693,18 @@ input:checked + .slider:before {
 }
 
 .contender-name {
-  font-size: 14.5px;
+  font-size: 14px;
   font-weight: 700;
   color: var(--text-primary);
-  white-space: nowrap;
+  line-height: 1.25;
+  text-align: center;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 130px;
+  height: 2.5em;
+  word-break: break-word;
+  width: 100%;
 }
 
 .vs-badge-wrapper {
@@ -683,11 +712,12 @@ input:checked + .slider:before {
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  padding-top: 10px;
 }
 
 .vs-badge {
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   background: #F1F5F9;
   color: #64748B;
   border-radius: 50%;
@@ -704,10 +734,13 @@ input:checked + .slider:before {
   align-items: center;
   justify-content: center;
   gap: 4px;
-  font-size: 12.5px;
+  font-size: 12px;
   color: var(--text-muted);
   font-weight: 500;
   margin-bottom: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Win Probability Bar */
@@ -717,7 +750,7 @@ input:checked + .slider:before {
 
 .probability-bar {
   width: 100%;
-  height: 40px;
+  height: 38px;
   border-radius: 12px;
   overflow: hidden;
   display: flex;
@@ -729,9 +762,9 @@ input:checked + .slider:before {
   align-items: center;
   justify-content: center;
   font-weight: 800;
-  font-size: 15px;
+  font-size: 14px;
   transition: width 0.4s ease;
-  min-width: 32px;
+  min-width: 28px;
 }
 
 .prob-segment.home {
@@ -742,7 +775,7 @@ input:checked + .slider:before {
 .prob-segment.draw {
   background-color: var(--draw-main);
   color: var(--draw-text);
-  font-size: 13px;
+  font-size: 12.5px;
 }
 
 .prob-segment.away {
@@ -758,29 +791,37 @@ input:checked + .slider:before {
   color: var(--text-muted);
   margin-top: 5px;
   padding: 0 2px;
+  gap: 4px;
 }
 
 .prob-labels .home-label {
   text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .prob-labels .away-label {
   text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Odds Comparison Blocks */
 .odds-section {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  gap: 10px;
   margin-top: auto;
 }
 
 .odds-card {
   border-radius: 14px;
-  padding: 12px 14px;
+  padding: 10px 12px;
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 .odds-card.market {
@@ -797,9 +838,12 @@ input:checked + .slider:before {
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 600;
   margin-bottom: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .odds-card.market .odds-header {
@@ -815,8 +859,9 @@ input:checked + .slider:before {
   justify-content: space-between;
   align-items: baseline;
   font-family: var(--font-mono);
-  font-size: 18px;
+  font-size: clamp(14px, 3.5vw, 17px);
   font-weight: 800;
+  gap: 2px;
 }
 
 .odds-card.market .odds-values {
@@ -830,24 +875,26 @@ input:checked + .slider:before {
 .odds-val-item {
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 .val-edge-tag {
   background: #F59E0B;
   color: white;
   border-radius: 4px;
-  font-size: 9px;
-  padding: 1px 4px;
+  font-size: 8.5px;
+  padding: 1px 3px;
   font-family: var(--font-sans);
   font-weight: 700;
   display: inline-block;
   margin-top: 2px;
+  letter-spacing: 0.02em;
 }
 
 /* Empty and Loading States */
 .loading-state, .empty-state {
   text-align: center;
-  padding: 60px 20px;
+  padding: 50px 20px;
   background: white;
   border-radius: 20px;
   border: 1px solid var(--border-color);
@@ -855,30 +902,30 @@ input:checked + .slider:before {
 }
 
 .spinner {
-  width: 44px;
-  height: 44px;
-  border: 4px solid var(--border-color);
+  width: 40px;
+  height: 40px;
+  border: 3.5px solid var(--border-color);
   border-top-color: var(--brand-primary);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
-  margin: 0 auto 16px;
+  margin: 0 auto 14px;
 }
 
 .empty-icon {
-  font-size: 48px;
+  font-size: 44px;
   color: var(--text-muted);
   margin-bottom: 12px;
 }
 
 .empty-state h3 {
-  font-size: 18px;
+  font-size: 17px;
   color: var(--text-primary);
   margin-bottom: 6px;
 }
 
 .empty-state p {
   color: var(--text-muted);
-  font-size: 14px;
+  font-size: 13.5px;
   margin-bottom: 16px;
 }
 
@@ -890,18 +937,20 @@ input:checked + .slider:before {
   border-radius: var(--radius-pill);
   font-weight: 600;
   cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
 }
 
 /* Toast Notifications */
 .toast-notification {
   position: fixed;
-  bottom: 24px;
-  right: 24px;
+  bottom: 20px;
+  right: 20px;
   background: #1E293B;
   color: white;
-  padding: 12px 20px;
+  padding: 12px 18px;
   border-radius: 12px;
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 500;
   box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
   transform: translateY(100px);
@@ -911,6 +960,7 @@ input:checked + .slider:before {
   display: flex;
   align-items: center;
   gap: 10px;
+  max-width: calc(100vw - 40px);
 }
 
 .toast-notification.show {
@@ -919,71 +969,184 @@ input:checked + .slider:before {
 }
 
 /* ==========================================================================
-   Responsive Adaptations for Mobile
+   Comprehensive Multi-Breakpoint Responsive Engine
    ========================================================================== */
+
+/* Tablets & Small Laptops (max-width: 900px) */
+@media (max-width: 900px) {
+  .matches-grid {
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 16px;
+  }
+}
+
+/* Mobile Devices (max-width: 640px) */
 @media (max-width: 640px) {
   .header-container {
     padding: 0 12px;
   }
   
+  .brand-logo {
+    width: 34px;
+    height: 34px;
+    font-size: 16px;
+  }
+
   .brand-info h1 {
     font-size: 16px;
   }
 
-  .tz-badge {
-    font-size: 11px;
-    padding: 5px 8px;
+  .status-indicator {
+    font-size: 10.5px;
   }
 
-  .btn-sync .btn-text {
-    display: none;
+  .tz-badge {
+    font-size: 11px;
+    padding: 4px 8px;
   }
 
   .btn-sync {
-    padding: 8px 10px;
+    padding: 7px 12px;
+    font-size: 12px;
   }
 
-  .main-content {
-    padding: 12px 10px 40px;
-  }
-
-  .matches-grid {
-    grid-template-columns: 1fr;
-    gap: 14px;
-  }
-
-  .match-card {
-    padding: 16px 14px;
-  }
-
-  .filters-row {
-    grid-template-columns: 1fr;
-  }
-
-  .avatar-circle {
-    width: 48px;
-    height: 48px;
-    font-size: 15px;
-  }
-
-  .contender-name {
-    max-width: 100px;
-    font-size: 13.5px;
-  }
-
-  .odds-values {
-    font-size: 16px;
+  .scraper-banner-wrapper {
+    padding: 0 12px;
+    margin-top: 10px;
   }
 
   .scraper-banner {
     padding: 8px 12px;
     flex-direction: column;
     align-items: flex-start;
+    gap: 6px;
+  }
+
+  .banner-left {
+    width: 100%;
+  }
+
+  .banner-text {
+    font-size: 12px;
   }
 
   .banner-right {
     width: 100%;
     justify-content: space-between;
     font-size: 11px;
+    padding-top: 4px;
+    border-top: 1px solid #F1F5F9;
+  }
+
+  .main-content {
+    padding: 12px 12px 40px;
+  }
+
+  .sport-tabs {
+    gap: 6px;
+    padding: 4px;
+  }
+
+  .tab-btn {
+    padding: 9px 12px;
+    font-size: 14px;
+  }
+
+  .toolbar-section {
+    padding: 12px;
+    border-radius: 14px;
+  }
+
+  .toolbar-content {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .search-wrapper input {
+    padding: 10px 36px 10px 34px;
+    font-size: 13.5px;
+  }
+
+  .toggle-item {
+    padding: 8px 12px;
+    justify-content: center;
+  }
+
+  .results-meta {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    margin-bottom: 12px;
+  }
+
+  .matches-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .match-card {
+    padding: 16px 14px;
+    border-radius: 18px;
+  }
+
+  .avatar-circle {
+    width: 46px;
+    height: 46px;
+    font-size: 14px;
+  }
+
+  .contender-name {
+    font-size: 13.5px;
+  }
+
+  .odds-section {
+    gap: 8px;
+  }
+
+  .odds-card {
+    padding: 8px 10px;
+  }
+
+  .odds-values {
+    font-size: 15.5px;
+  }
+}
+
+/* Extra Small Phones (max-width: 380px) */
+@media (max-width: 380px) {
+  .tz-badge {
+    display: none; /* Hide tz badge to fit brand & sync cleanly */
+  }
+
+  .brand-info h1 {
+    font-size: 15px;
+  }
+
+  .tab-btn {
+    font-size: 13px;
+    padding: 8px;
+  }
+
+  .avatar-circle {
+    width: 40px;
+    height: 40px;
+    font-size: 13px;
+  }
+
+  .contender-name {
+    font-size: 12.5px;
+  }
+
+  .probability-bar {
+    height: 34px;
+  }
+
+  .prob-segment {
+    font-size: 12.5px;
+  }
+
+  .odds-values {
+    font-size: 14px;
   }
 }

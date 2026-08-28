@@ -10,10 +10,7 @@
 const state = {
   sport: 'tennis',
   search: '',
-  league: 'all',
-  dateFilter: 'all',
   valueOnly: false,
-  sortOrder: 'soonest', // 'soonest', 'asc', 'desc', 'value'
   matches: [],
   allMatchesCache: { tennis: [], football: [] },
   isLoading: false,
@@ -32,7 +29,6 @@ document.addEventListener('DOMContentLoaded', () => {
 async function initApp() {
   await Promise.all([
     pollScraperStatus(),
-    loadLeagues(),
     fetchMatches()
   ]);
 }
@@ -42,14 +38,10 @@ function switchSport(sport) {
   if (state.sport === sport) return;
   
   state.sport = sport;
-  state.league = 'all';
   
   document.getElementById('tabTennis').classList.toggle('active', sport === 'tennis');
   document.getElementById('tabFootball').classList.toggle('active', sport === 'football');
   
-  document.getElementById('leagueSelect').value = 'all';
-  
-  loadLeagues();
   fetchMatches();
 }
 
@@ -145,8 +137,14 @@ function updateScraperBanner(data) {
 // GitHub Pages / Static JSON Fallback
 async function checkStaticDataFallback() {
   try {
-    const res = await fetch('./static/data.json').catch(() => fetch('./data.json'));
-    if (res.ok) {
+    let res;
+    try {
+      res = await fetch('./data.json');
+      if (!res.ok) throw new Error('data.json not found at root');
+    } catch {
+      res = await fetch('./static/data.json');
+    }
+    if (res && res.ok) {
       const staticData = await res.json();
       state.allMatchesCache = staticData.matches || { tennis: [], football: [] };
       
@@ -163,46 +161,10 @@ async function checkStaticDataFallback() {
         document.getElementById('lastScrapeMeta').innerHTML = `<i class="fa-regular fa-clock"></i> Exported: ${formatIST12Hour(staticData.exported_at, false)}`;
       }
       
-      populateLeaguesFromStatic(staticData.leagues);
       processAndRenderMatches(state.allMatchesCache[state.sport] || []);
     }
   } catch (e) {
     console.error('Static data load failed:', e);
-  }
-}
-
-function populateLeaguesFromStatic(leaguesData) {
-  const select = document.getElementById('leagueSelect');
-  select.innerHTML = '<option value="all">🏆 All Tournaments / Leagues</option>';
-  const list = leaguesData?.[state.sport] || [];
-  list.forEach(lg => {
-    const opt = document.createElement('option');
-    opt.value = lg;
-    opt.textContent = lg;
-    select.appendChild(opt);
-  });
-}
-
-// Load Leagues Dropdown
-async function loadLeagues() {
-  if (state.isStaticMode) return;
-  try {
-    const res = await fetch(`/api/leagues?sport=${state.sport}`);
-    if (!res.ok) throw new Error('API unavailable');
-    const data = await res.json();
-    const select = document.getElementById('leagueSelect');
-    
-    select.innerHTML = '<option value="all">🏆 All Tournaments / Leagues</option>';
-    if (data.leagues && data.leagues.length > 0) {
-      data.leagues.forEach(lg => {
-        const opt = document.createElement('option');
-        opt.value = lg;
-        opt.textContent = lg;
-        select.appendChild(opt);
-      });
-    }
-  } catch (err) {
-    console.warn('Fallback to local leagues');
   }
 }
 
@@ -221,8 +183,8 @@ async function fetchMatches() {
   try {
     const params = new URLSearchParams({
       sport: state.sport,
-      sort_order: 'asc', // fetch all asc then smart sort client-side
-      limit: '500'
+      sort_order: 'asc', // fetch all sorted by start time
+      limit: '1000'
     });
 
     const res = await fetch(`/api/matches?${params.toString()}`);
@@ -241,7 +203,7 @@ async function fetchMatches() {
   }
 }
 
-// Filter, Smart Timing Sort, and Render
+// Filter and Strict Start Time Chronological Sort
 function processAndRenderMatches(rawList) {
   let list = [...rawList];
 
@@ -256,113 +218,37 @@ function processAndRenderMatches(rawList) {
     );
   }
 
-  // 2. League Filter
-  if (state.league && state.league !== 'all') {
-    list = list.filter(m => m.league && m.league.toLowerCase().includes(state.league.toLowerCase()));
-  }
-
-  // 3. Value Bets Filter
+  // 2. Value Bets (+EV) Filter
   if (state.valueOnly) {
     list = list.filter(m => m.has_value === 1);
   }
 
-  // 4. Date Filter (Evaluated in IST)
-  if (state.dateFilter !== 'all') {
-    list = filterByDateIST(list, state.dateFilter);
-  }
+  // 3. Strict Sort by Start Time (Ascending: Earliest to Latest)
+  // Ensures every match in XML is sorted in exact start time order regardless of finished/live status
+  list.sort((a, b) => (a.start_timestamp || 0) - (b.start_timestamp || 0));
 
-  // 5. Smart Timing Sort (Live & Upcoming Soonest First)
-  list = sortMatchesSmart(list, state.sortOrder);
+  // 4. Enrich status for live indicator
+  const nowMs = Date.now();
+  const TWO_AND_HALF_HOURS = 2.5 * 60 * 60 * 1000;
+  list = list.map(m => {
+    const matchTimeMs = (m.start_timestamp || 0) * 1000;
+    const diff = matchTimeMs - nowMs;
+    let status = 'upcoming';
+    if (diff <= 0 && Math.abs(diff) < TWO_AND_HALF_HOURS) {
+      status = 'live';
+    } else if (diff < -TWO_AND_HALF_HOURS) {
+      status = 'past';
+    }
+    return {
+      ...m,
+      _status: status,
+      _isDelayed: status === 'live' && Math.abs(diff) > 45 * 60 * 1000
+    };
+  });
 
   state.matches = list;
   renderMatches();
   updateSummary();
-}
-
-/**
- * Smart Timing Sorting:
- * - 'soonest': Live matches (started <2.5h ago) 1st -> Upcoming matches (sorted soonest to furthest) 2nd -> Past finished matches 3rd.
- * - 'asc': Earliest match timestamp first.
- * - 'desc': Latest match timestamp first.
- * - 'value': Highest EV edge first.
- */
-function sortMatchesSmart(matches, sortMode) {
-  const nowMs = Date.now();
-  const TWO_AND_HALF_HOURS = 2.5 * 60 * 60 * 1000;
-
-  const enriched = matches.map(m => {
-    const matchTimeMs = (m.start_timestamp || 0) * 1000;
-    const diff = matchTimeMs - nowMs;
-
-    let status = 'upcoming';
-    if (diff <= 0 && Math.abs(diff) < TWO_AND_HALF_HOURS) {
-      status = 'live'; // Live in-progress
-    } else if (diff < -TWO_AND_HALF_HOURS) {
-      status = 'past'; // Past / Completed
-    }
-
-    // Check if match was postponed/delayed (e.g. was scheduled earlier but start_time is recent/updated)
-    const isDelayed = status === 'live' && Math.abs(diff) > 45 * 60 * 1000;
-
-    return {
-      ...m,
-      _matchTimeMs: matchTimeMs,
-      _diff: diff,
-      _status: status,
-      _isDelayed: isDelayed
-    };
-  });
-
-  if (sortMode === 'soonest') {
-    return enriched.sort((a, b) => {
-      // Priority rank: Live (1), Upcoming (2), Past (3)
-      const rank = { live: 1, upcoming: 2, past: 3 };
-      if (rank[a._status] !== rank[b._status]) {
-        return rank[a._status] - rank[b._status];
-      }
-      if (a._status === 'upcoming' || a._status === 'live') {
-        return a._matchTimeMs - b._matchTimeMs; // soonest upcoming first
-      }
-      return b._matchTimeMs - a._matchTimeMs; // most recent past first
-    });
-  } else if (sortMode === 'asc') {
-    return enriched.sort((a, b) => a._matchTimeMs - b._matchTimeMs);
-  } else if (sortMode === 'desc') {
-    return enriched.sort((a, b) => b._matchTimeMs - a._matchTimeMs);
-  } else if (sortMode === 'value') {
-    return enriched.sort((a, b) => (b.has_value || 0) - (a.has_value || 0) || a._matchTimeMs - b._matchTimeMs);
-  }
-
-  return enriched;
-}
-
-// Date filtering in Indian Standard Time (IST)
-function filterByDateIST(matches, filterType) {
-  // Convert current time to IST date parts
-  const now = new Date();
-  const istOffset = 5.5 * 60 * 60 * 1000;
-  const istNow = new Date(now.getTime() + istOffset);
-
-  const istTodayY = istNow.getUTCFullYear();
-  const istTodayM = istNow.getUTCMonth();
-  const istTodayD = istNow.getUTCDate();
-
-  const todayStartUTC = Date.UTC(istTodayY, istTodayM, istTodayD) - istOffset;
-  const tomorrowStartUTC = todayStartUTC + 86400000;
-  const dayAfterStartUTC = tomorrowStartUTC + 86400000;
-  const upcomingEndUTC = todayStartUTC + (86400000 * 4);
-
-  return matches.filter(m => {
-    const t = (m.start_timestamp || 0) * 1000;
-    if (filterType === 'today') {
-      return t >= todayStartUTC && t < tomorrowStartUTC;
-    } else if (filterType === 'tomorrow') {
-      return t >= tomorrowStartUTC && t < dayAfterStartUTC;
-    } else if (filterType === 'upcoming') {
-      return t >= todayStartUTC && t < upcomingEndUTC;
-    }
-    return true;
-  });
 }
 
 // Render Match Cards to Grid
@@ -417,8 +303,7 @@ function formatIST12Hour(isoOrTimestamp, includeTzLabel = true) {
       if (p.type === 'day') day = p.value;
     });
 
-    const tzSuffix = includeTzLabel ? '' : '';
-    return `${hour}:${minute} ${dayPeriod} · ${month} ${day}${tzSuffix}`;
+    return `${hour}:${minute} ${dayPeriod} · ${month} ${day}`;
   } catch (e) {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
   }
@@ -449,14 +334,14 @@ function createMatchCardHTML(m) {
   const hasValue = m.has_value === 1;
   const valueSide = m.value_side;
 
-  // Avatars
+  // Avatars — use data-fallback for safe onerror handling (no inline innerHTML injection)
   const homeAvatarHTML = m.home_avatar
-    ? `<img src="${escapeHtml(m.home_avatar)}" alt="${escapeHtml(m.home_name)}" onerror="this.parentElement.innerHTML='${escapeHtml(m.home_initials)}'"/>`
-    : escapeHtml(m.home_initials);
+    ? `<img src="${escapeHtml(m.home_avatar)}" alt="${escapeHtml(m.home_name)}" onerror="this.style.display='none';this.parentElement.textContent=this.parentElement.dataset.fallback||'??'"/>`
+    : escapeHtml(m.home_initials || '??');
 
   const awayAvatarHTML = m.away_avatar
-    ? `<img src="${escapeHtml(m.away_avatar)}" alt="${escapeHtml(m.away_name)}" onerror="this.parentElement.innerHTML='${escapeHtml(m.away_initials)}'"/>`
-    : escapeHtml(m.away_initials);
+    ? `<img src="${escapeHtml(m.away_avatar)}" alt="${escapeHtml(m.away_name)}" onerror="this.style.display='none';this.parentElement.textContent=this.parentElement.dataset.fallback||'??'"/>`
+    : escapeHtml(m.away_initials || '??');
 
   // Match Status Tag (Live / Delayed / Regular)
   let statusTag = '';
@@ -568,7 +453,7 @@ function createMatchCardHTML(m) {
       <!-- Contenders -->
       <div class="contenders-row">
         <div class="contender home">
-          <div class="avatar-circle">${homeAvatarHTML}</div>
+          <div class="avatar-circle" data-fallback="${escapeHtml(m.home_initials || '??')}">${homeAvatarHTML}</div>
           <div class="contender-name" title="${escapeHtml(m.home_name)}">${escapeHtml(m.home_name)}</div>
         </div>
 
@@ -577,7 +462,7 @@ function createMatchCardHTML(m) {
         </div>
 
         <div class="contender away">
-          <div class="avatar-circle">${awayAvatarHTML}</div>
+          <div class="avatar-circle" data-fallback="${escapeHtml(m.away_initials || '??')}">${awayAvatarHTML}</div>
           <div class="contender-name" title="${escapeHtml(m.away_name)}">${escapeHtml(m.away_name)}</div>
         </div>
       </div>

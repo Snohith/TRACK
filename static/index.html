@@ -84,54 +84,56 @@
 
     <!-- Filters & Search Toolbar -->
     <section class="toolbar-section">
-      <div class="search-wrapper">
-        <i class="fa-solid fa-magnifying-glass search-icon"></i>
-        <input 
-          type="text" 
-          id="searchInput" 
-          placeholder="Search player, team, tournament, venue..." 
-          oninput="handleSearchInput()" 
-        />
-        <button id="clearSearchBtn" class="btn-clear" onclick="clearSearch()" style="display: none;">
-          <i class="fa-solid fa-xmark"></i>
-        </button>
-      </div>
-
-      <div class="filters-row">
-        <!-- Tournament / League Dropdown -->
-        <div class="filter-item">
-          <select id="leagueSelect" onchange="applyFilters()">
-            <option value="all">🏆 All Tournaments / Leagues</option>
-          </select>
+      <div class="toolbar-content">
+        <div class="search-wrapper">
+          <i class="fa-solid fa-magnifying-glass search-icon"></i>
+          <input 
+            type="text" 
+            id="searchInput" 
+            placeholder="Search player, team, tournament, venue..." 
+            oninput="handleSearchInput()" 
+          />
+          <button id="clearSearchBtn" class="btn-clear" onclick="clearSearch()" style="display: none;">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
         </div>
 
-        <!-- Date Filter -->
-        <div class="filter-item">
-          <select id="dateSelect" onchange="applyFilters()">
-            <option value="all">📅 All Match Dates</option>
-            <option value="today">Today's Matches (IST)</option>
-            <option value="tomorrow">Tomorrow's Matches (IST)</option>
-            <option value="upcoming">Upcoming (Next 3 Days)</option>
-          </select>
-        </div>
+        <div class="filters-row">
+          <!-- Tournament / League Dropdown -->
+          <div class="filter-item">
+            <select id="leagueSelect" onchange="applyFilters()">
+              <option value="all">🏆 All Tournaments</option>
+            </select>
+          </div>
 
-        <!-- Smart Timing Sort Options -->
-        <div class="filter-item">
-          <select id="sortSelect" onchange="applyFilters()">
-            <option value="soonest">⏰ Starting Soonest (Live & Upcoming First)</option>
-            <option value="asc">⏰ Earliest Match Time (Ascending)</option>
-            <option value="desc">⏰ Latest Match Time (Descending)</option>
-            <option value="value">🔥 Highest Value (+EV Edge)</option>
-          </select>
-        </div>
+          <!-- Date Filter -->
+          <div class="filter-item">
+            <select id="dateSelect" onchange="applyFilters()">
+              <option value="all">📅 All Dates</option>
+              <option value="today">Today (IST)</option>
+              <option value="tomorrow">Tomorrow (IST)</option>
+              <option value="upcoming">Next 3 Days</option>
+            </select>
+          </div>
 
-        <!-- Value Bets Toggle -->
-        <div class="filter-item toggle-item">
-          <label class="toggle-switch">
-            <input type="checkbox" id="valueOnlyToggle" onchange="applyFilters()">
-            <span class="slider"></span>
-          </label>
-          <span class="toggle-label"><i class="fa-solid fa-fire text-amber"></i> Value Bets (+EV)</span>
+          <!-- Sort -->
+          <div class="filter-item">
+            <select id="sortSelect" onchange="applyFilters()">
+              <option value="soonest">⏰ Soonest First</option>
+              <option value="asc">⏰ Earliest</option>
+              <option value="desc">⏰ Latest</option>
+              <option value="value">🔥 Highest Value</option>
+            </select>
+          </div>
+
+          <!-- Value Bets Toggle -->
+          <div class="filter-item toggle-item">
+            <label class="toggle-switch">
+              <input type="checkbox" id="valueOnlyToggle" onchange="applyFilters()">
+              <span class="slider"></span>
+            </label>
+            <span class="toggle-label"><i class="fa-solid fa-fire text-amber"></i> Value Bets</span>
+          </div>
         </div>
       </div>
     </section>

@@ -17,3 +17,7 @@ ENV/
 
 # Local task logs
 .system_generated/
+
+# SQLite WAL temporary files
+*.db-shm
+*.db-wal
