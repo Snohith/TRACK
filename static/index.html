@@ -55,6 +55,9 @@
       <div class="banner-right">
         <span class="banner-meta" id="lastScrapeMeta"><i class="fa-regular fa-clock"></i> Last scraped: 06:00 PM IST</span>
         <span class="banner-meta next-run" id="nextScrapeMeta"><i class="fa-solid fa-hourglass-half"></i> Next in 58m</span>
+        <button class="btn-logs-toggle" onclick="openLogsModal()" title="View Scraper Run History & Logs">
+          <i class="fa-solid fa-file-waveform"></i> <span>Scrape Logs</span>
+        </button>
       </div>
       <!-- Progress Bar (Visible during scraping) -->
       <div class="banner-progress" id="bannerProgress" style="display: none;">
@@ -165,10 +168,70 @@
 
   </main>
 
+  <!-- Scraper Activity & Execution Logs Modal -->
+  <div id="logsModal" class="modal-overlay" style="display: none;" onclick="closeLogsModal(event)">
+    <div class="modal-card" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <div class="modal-title">
+          <i class="fa-solid fa-file-waveform text-brand"></i>
+          <h3>Scraper Activity & Run History</h3>
+        </div>
+        <button class="btn-modal-close" onclick="closeLogsModal()">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <!-- Live Status Summary -->
+        <div class="logs-summary-grid">
+          <div class="log-summary-card">
+            <span class="label">Current Status</span>
+            <span class="value" id="modalScraperState">Idle</span>
+          </div>
+          <div class="log-summary-card">
+            <span class="label">Last Full Run</span>
+            <span class="value" id="modalLastRun">Just now</span>
+          </div>
+          <div class="log-summary-card">
+            <span class="label">Next Scheduled Run</span>
+            <span class="value" id="modalNextRun">Hourly via GitHub Actions</span>
+          </div>
+          <div class="log-summary-card">
+            <span class="label">Total Matches in DB</span>
+            <span class="value" id="modalTotalMatches">231 matches</span>
+          </div>
+        </div>
+
+        <!-- History Table -->
+        <h4 class="logs-subtitle"><i class="fa-solid fa-clock-rotate-left"></i> Recent Scraping Execution Logs</h4>
+        <div class="logs-table-wrapper">
+          <table class="logs-table">
+            <thead>
+              <tr>
+                <th>Execution Time (IST)</th>
+                <th>URLs Scanned</th>
+                <th>Matches Updated</th>
+                <th>Errors</th>
+                <th>Duration</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="logsTableBody">
+              <!-- Dynamically populated rows -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <span class="footer-hint"><i class="fa-solid fa-circle-info"></i> Scraper runs automatically every 1 hour via GitHub Actions.</span>
+        <button class="btn-modal-close-action" onclick="closeLogsModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast Notification System -->
   <div id="toast" class="toast-notification"></div>
 
   <!-- Scripts -->
-  <script src="app.js?v=2"></script>
+  <script src="app.js?v=3"></script>
 </body>
 </html>

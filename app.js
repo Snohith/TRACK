@@ -5,6 +5,8 @@
  * - Multi-criteria Filters: Text Search, Dynamic Tournaments, IST Date Filters, +EV Value Toggle
  * - Smart Chronological & Status Sorting (Live -> Soonest Upcoming -> Past)
  * - Seamless Dual-Mode: Live Dynamic Backend + Zero-Config GitHub Pages Fallback
+ * - Auto-Refresh in Background (Every 30s)
+ * - Scraper Activity Logs & Run History Inspector Modal
  */
 
 const isStaticHost = typeof window !== 'undefined' && (
@@ -22,6 +24,7 @@ const state = {
   matches: [],
   allMatchesCache: { tennis: [], football: [] },
   leaguesCache: { tennis: [], football: [] },
+  statsCache: null,
   isLoading: false,
   isScrapingActive: false,
   isStaticMode: isStaticHost,
@@ -31,12 +34,16 @@ const state = {
 // Initialize Application
 document.addEventListener('DOMContentLoaded', () => {
   initApp();
+
   // Poll scraper status every 20s if dynamic API available
   setInterval(() => {
     if (!state.isStaticMode) {
       pollScraperStatus();
     }
   }, 20000);
+
+  // Background Auto-Refresh every 30 seconds (silent update)
+  setInterval(autoRefreshData, 30000);
 });
 
 async function initApp() {
@@ -45,6 +52,54 @@ async function initApp() {
   } else {
     await fetchMatches();
     pollScraperStatus();
+  }
+}
+
+// Background Auto-Refresh
+async function autoRefreshData() {
+  if (state.isStaticMode) {
+    try {
+      const res = await fetch(`./data.json?_t=${Date.now()}`);
+      if (res.ok) {
+        const staticData = await res.json();
+        state.allMatchesCache = staticData.matches || { tennis: [], football: [] };
+        state.leaguesCache = staticData.leagues || { tennis: [], football: [] };
+        state.statsCache = staticData.stats || null;
+
+        const tennisCount = (state.allMatchesCache.tennis || []).length;
+        const footballCount = (state.allMatchesCache.football || []).length;
+        const badgeT = document.getElementById('tennisCountBadge');
+        const badgeF = document.getElementById('footballCountBadge');
+        if (badgeT) badgeT.textContent = tennisCount;
+        if (badgeF) badgeF.textContent = footballCount;
+
+        if (staticData.exported_at) {
+          const lastMeta = document.getElementById('lastScrapeMeta');
+          if (lastMeta) lastMeta.innerHTML = `<i class="fa-regular fa-clock"></i> Last scraped: ${formatIST12Hour(staticData.exported_at)}`;
+        }
+
+        const currentList = state.allMatchesCache[state.sport] || [];
+        processAndRenderMatches(currentList);
+      }
+    } catch (e) {
+      // silent background failure
+    }
+  } else {
+    try {
+      const params = new URLSearchParams({
+        sport: state.sport,
+        sort_order: 'asc',
+        limit: '1000'
+      });
+      const res = await fetch(`/api/matches?${params.toString()}`);
+      if (res.ok) {
+        const data = await res.json();
+        state.allMatchesCache[state.sport] = data.matches || [];
+        processAndRenderMatches(data.matches || []);
+      }
+    } catch (e) {
+      // silent
+    }
   }
 }
 
@@ -72,6 +127,7 @@ async function pollScraperStatus() {
     if (!res.ok) throw new Error('Status API unavailable');
 
     const data = await res.json();
+    state.statsCache = data.stats || null;
     updateScraperBanner(data);
 
     if (data.is_running && !state.isScrapingActive) {
@@ -82,7 +138,6 @@ async function pollScraperStatus() {
       fetchMatches();
     }
   } catch (err) {
-    // If backend API unreachable, switch to GitHub Pages static archive mode
     state.isStaticMode = true;
     checkStaticDataFallback();
   }
@@ -149,7 +204,7 @@ function updateScraperBanner(data) {
       const diffMin = Math.max(1, Math.round((nextDate - new Date()) / 60000));
       nextScrapeMeta.innerHTML = `<i class="fa-solid fa-hourglass-half"></i> Next in ${diffMin}m`;
     } else {
-      nextScrapeMeta.innerHTML = `<i class="fa-solid fa-clock"></i> Hourly Scrape Active`;
+      nextScrapeMeta.innerHTML = `<i class="fa-solid fa-clock"></i> Hourly Auto-Scrape`;
     }
   }
 }
@@ -169,6 +224,7 @@ async function checkStaticDataFallback() {
       const staticData = await res.json();
       state.allMatchesCache = staticData.matches || { tennis: [], football: [] };
       state.leaguesCache = staticData.leagues || { tennis: [], football: [] };
+      state.statsCache = staticData.stats || null;
 
       const tennisCount = (state.allMatchesCache.tennis || []).length;
       const footballCount = (state.allMatchesCache.football || []).length;
@@ -180,7 +236,7 @@ async function checkStaticDataFallback() {
       document.getElementById('scraperStatusText').textContent = `Loaded ${tennisCount + footballCount} matches. Scraper updates hourly via GitHub Actions.`;
 
       if (staticData.exported_at) {
-        document.getElementById('lastScrapeMeta').innerHTML = `<i class="fa-regular fa-clock"></i> Exported: ${formatIST12Hour(staticData.exported_at)}`;
+        document.getElementById('lastScrapeMeta').innerHTML = `<i class="fa-regular fa-clock"></i> Last scraped: ${formatIST12Hour(staticData.exported_at)}`;
       }
       document.getElementById('nextScrapeMeta').innerHTML = `<i class="fa-solid fa-clock"></i> Hourly Auto-Scrape`;
 
@@ -201,10 +257,9 @@ function updateLeagueDropdown() {
   select.innerHTML = '<option value="all">🏆 All Tournaments</option>';
 
   let leagues = [];
-  if (state.leaguesCache && state.leaguesCache[state.sport]) {
+  if (state.leaguesCache && state.leaguesCache[state.sport] && state.leaguesCache[state.sport].length > 0) {
     leagues = state.leaguesCache[state.sport];
   } else {
-    // Extract unique leagues from cached matches
     const currentList = state.allMatchesCache[state.sport] || [];
     const set = new Set();
     currentList.forEach(m => {
@@ -753,7 +808,6 @@ async function triggerManualSync() {
       showToast(data.message || 'Scraper already running', 'info');
     }
   } catch (err) {
-    // If backend failed, switch to static refresh
     state.isStaticMode = true;
     await checkStaticDataFallback();
     showToast('Switched to static archive. Refreshed data!', 'info');
@@ -763,6 +817,77 @@ async function triggerManualSync() {
       btn.disabled = false;
     }, 1500);
   }
+}
+
+// Scraper Activity Logs Modal Functions
+function openLogsModal() {
+  const modal = document.getElementById('logsModal');
+  if (!modal) return;
+  modal.style.display = 'flex';
+  renderLogsModal();
+}
+
+function closeLogsModal(e) {
+  const modal = document.getElementById('logsModal');
+  if (!modal) return;
+  if (!e || e.target === modal || e.target.classList.contains('btn-modal-close') || e.target.classList.contains('btn-modal-close-action')) {
+    modal.style.display = 'none';
+  }
+}
+
+function renderLogsModal() {
+  const stats = state.statsCache || {};
+  const history = stats.history || (stats.last_run ? [stats.last_run] : []);
+  const tennisCount = (state.allMatchesCache.tennis || []).length;
+  const footballCount = (state.allMatchesCache.football || []).length;
+  const total = tennisCount + footballCount;
+
+  const modalState = document.getElementById('modalScraperState');
+  const modalTotal = document.getElementById('modalTotalMatches');
+  const modalLast = document.getElementById('modalLastRun');
+
+  if (modalState) modalState.textContent = state.isScrapingActive ? 'Running' : 'Active (Hourly Auto)';
+  if (modalTotal) modalTotal.textContent = `${total} matches`;
+
+  const lastRun = stats.last_run;
+  if (lastRun && lastRun.timestamp) {
+    if (modalLast) modalLast.textContent = formatIST12Hour(lastRun.timestamp);
+  } else {
+    if (modalLast) modalLast.textContent = 'Auto via GitHub Actions';
+  }
+
+  const tbody = document.getElementById('logsTableBody');
+  if (!tbody) return;
+
+  if (history.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="6" style="text-align: center; color: #64748B; padding: 16px;">
+          Scraper runs hourly on GitHub Actions. Total ${total} matches currently loaded.
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  tbody.innerHTML = history.map(r => {
+    const timeFormatted = formatIST12Hour(r.timestamp);
+    const errors = r.errors || 0;
+    const duration = r.duration_seconds ? `${r.duration_seconds}s` : '-';
+    const tagClass = errors > 5 ? 'err' : (errors > 0 ? 'warn' : 'ok');
+    const tagText = errors === 0 ? 'Success' : (errors < 5 ? 'Partial' : 'Error');
+
+    return `
+      <tr>
+        <td><strong>${timeFormatted}</strong></td>
+        <td>${r.total_urls || '-'}</td>
+        <td>${r.scraped_matches || '-'} (${r.new_matches || 0} new, ${r.updated_matches || 0} refreshed)</td>
+        <td>${errors}</td>
+        <td>${duration}</td>
+        <td><span class="logs-status-tag ${tagClass}">${tagText}</span></td>
+      </tr>
+    `;
+  }).join('');
 }
 
 function showToast(message, type = 'info') {

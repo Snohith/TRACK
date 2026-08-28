@@ -212,16 +212,18 @@ def get_stats() -> Dict[str, Any]:
         cursor.execute("SELECT COUNT(*) FROM matches WHERE has_value = 1")
         value_count = cursor.fetchone()[0]
 
-        cursor.execute("SELECT * FROM scraper_runs ORDER BY id DESC LIMIT 1")
-        last_run = cursor.fetchone()
-        last_run_dict = dict(last_run) if last_run else None
+        cursor.execute("SELECT * FROM scraper_runs ORDER BY id DESC LIMIT 10")
+        runs = cursor.fetchall()
+        history = [dict(r) for r in runs]
+        last_run_dict = history[0] if history else None
 
         return {
             "tennis_count": tennis_count,
             "football_count": football_count,
             "total_count": tennis_count + football_count,
             "value_count": value_count,
-            "last_run": last_run_dict
+            "last_run": last_run_dict,
+            "history": history
         }
 
 def record_scraper_run(run_data: Dict[str, Any]):

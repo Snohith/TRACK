@@ -1,4 +1,6 @@
 import asyncio
+import os
+import shutil
 import re
 import time
 import json
@@ -188,9 +190,9 @@ async def fetch_match_data(
     api_url = f"{API_BASE_URL}/{match_id}"
 
     async with semaphore:
-        for attempt in range(4):
+        for attempt in range(5):
             try:
-                resp = await client.get(api_url, headers=HEADERS, timeout=12.0)
+                resp = await client.get(api_url, headers=HEADERS, timeout=14.0)
 
                 if resp.status_code == 200:
                     data = resp.json()
@@ -215,7 +217,7 @@ async def fetch_match_data(
                         odds["f_home"], odds["f_away"], odds["f_draw"]
                     )
 
-                    await asyncio.sleep(0.08)
+                    await asyncio.sleep(0.12)
                     return {
                         "id": match_id,
                         "url": url,
@@ -245,8 +247,8 @@ async def fetch_match_data(
                     }
 
                 elif resp.status_code == 429:
-                    backoff = 2.0 * (attempt + 1)
-                    logger.warning(f"Rate limited on {match_id}, backing off {backoff}s (attempt {attempt + 1}/4)")
+                    backoff = 3.0 * (attempt + 1)
+                    logger.warning(f"Rate limited on {match_id}, backing off {backoff}s (attempt {attempt + 1}/5)")
                     await asyncio.sleep(backoff)
 
                 elif resp.status_code == 404:
@@ -325,13 +327,13 @@ async def run_scraper_pipeline() -> Dict[str, Any]:
         })
         return {"status": "error", "message": str(e)}
 
-    semaphore = asyncio.Semaphore(5)
+    semaphore = asyncio.Semaphore(3)
     results: List[Optional[Dict[str, Any]]] = []
-    chunk_size = 25
+    chunk_size = 15
 
     async with httpx.AsyncClient(
-        timeout=httpx.Timeout(15.0, connect=10.0),
-        limits=httpx.Limits(max_connections=10, max_keepalive_connections=5)
+        timeout=httpx.Timeout(16.0, connect=10.0),
+        limits=httpx.Limits(max_connections=8, max_keepalive_connections=4)
     ) as client:
         for i in range(0, len(urls), chunk_size):
             chunk = urls[i:i + chunk_size]
@@ -347,7 +349,7 @@ async def run_scraper_pipeline() -> Dict[str, Any]:
 
             scraper_live_state["processed_count"] = len(results)
             scraper_live_state["status_text"] = f"Scraping matches ({len(results)}/{len(urls)})..."
-            await asyncio.sleep(0.2)
+            await asyncio.sleep(0.4)
 
     scraper_live_state["phase"] = "saving"
     scraper_live_state["status_text"] = "Saving match records to database..."
