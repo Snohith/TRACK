@@ -1,18 +1,22 @@
 /**
  * StatsArena Match Explorer - Client Application
  * Features:
- * - 12-Hour IST (Indian Standard Time) Timestamps
- * - Smart Chronological Sorting for Live, Upcoming & Postponed Matches
- * - Real-Time Scraper Status Banner (In Process / Finished / Sync Stats)
- * - Dual Mode: Dynamic FastAPI Backend + Static GitHub Pages Fallback
+ * - 12-Hour IST (Indian Standard Time, UTC+5:30) Timestamps
+ * - Multi-criteria Filters: Text Search, Dynamic Tournaments, IST Date Filters, +EV Value Toggle
+ * - Smart Chronological & Status Sorting (Live -> Soonest Upcoming -> Past)
+ * - Seamless Dual-Mode: Live Dynamic Backend + Zero-Config GitHub Pages Fallback
  */
 
 const state = {
   sport: 'tennis',
   search: '',
+  league: 'all',
+  dateFilter: 'all',
+  sortOrder: 'soonest', // 'soonest', 'asc', 'desc', 'value'
   valueOnly: false,
   matches: [],
   allMatchesCache: { tennis: [], football: [] },
+  leaguesCache: { tennis: [], football: [] },
   isLoading: false,
   isScrapingActive: false,
   isStaticMode: false,
@@ -22,55 +26,62 @@ const state = {
 // Initialize Application
 document.addEventListener('DOMContentLoaded', () => {
   initApp();
-  // Poll scraper status every 15s
-  setInterval(pollScraperStatus, 15000);
+  // Poll scraper status every 20s if dynamic API available
+  setInterval(() => {
+    if (!state.isStaticMode) {
+      pollScraperStatus();
+    }
+  }, 20000);
 });
 
 async function initApp() {
-  await Promise.all([
-    pollScraperStatus(),
-    fetchMatches()
-  ]);
+  await fetchMatches();
+  if (!state.isStaticMode) {
+    pollScraperStatus();
+  }
 }
 
-// Sport Switcher
+// Sport Switcher (Tennis <-> Football)
 function switchSport(sport) {
   if (state.sport === sport) return;
-  
+
   state.sport = sport;
-  
+  state.league = 'all';
+
   document.getElementById('tabTennis').classList.toggle('active', sport === 'tennis');
   document.getElementById('tabFootball').classList.toggle('active', sport === 'football');
-  
+
+  const leagueSelect = document.getElementById('leagueSelect');
+  if (leagueSelect) leagueSelect.value = 'all';
+
+  updateLeagueDropdown();
   fetchMatches();
 }
 
-// Scraper Status Polling
+// Scraper Status Polling (Dynamic Mode)
 async function pollScraperStatus() {
   try {
     const res = await fetch('/api/status');
-    if (!res.ok) throw new Error('Status API not reachable');
-    
+    if (!res.ok) throw new Error('Status API unavailable');
+
     const data = await res.json();
     updateScraperBanner(data);
 
     if (data.is_running && !state.isScrapingActive) {
       state.isScrapingActive = true;
-      // Faster polling when scraper is running
       setTimeout(pollScraperStatus, 3000);
     } else if (!data.is_running && state.isScrapingActive) {
       state.isScrapingActive = false;
-      // Refresh matches once finished
       fetchMatches();
     }
   } catch (err) {
-    // If backend API not reachable, try reading static data.json (GitHub Pages Mode)
+    // If backend API unreachable, switch to GitHub Pages static archive mode
     state.isStaticMode = true;
     checkStaticDataFallback();
   }
 }
 
-// Update Top Scraper Status Banner
+// Update Top Status Banner
 function updateScraperBanner(data) {
   const banner = document.getElementById('scraperBanner');
   const badge = document.getElementById('scraperStateBadge');
@@ -84,7 +95,7 @@ function updateScraperBanner(data) {
   const stats = data.stats || {};
   const tennisCount = stats.tennis_count || 0;
   const footballCount = stats.football_count || 0;
-  
+
   document.getElementById('tennisCountBadge').textContent = tennisCount;
   document.getElementById('footballCountBadge').textContent = footballCount;
 
@@ -113,54 +124,60 @@ function updateScraperBanner(data) {
 
     const lastRun = stats.last_run;
     if (lastRun && lastRun.timestamp) {
-      const lastTimeIST = formatIST12Hour(lastRun.timestamp, false);
+      const lastTimeIST = formatIST12Hour(lastRun.timestamp);
       const newMatches = lastRun.new_matches || 0;
       const updatedMatches = lastRun.updated_matches || 0;
       const duration = lastRun.duration_seconds || 0;
 
       badge.innerHTML = '<i class="fa-solid fa-circle-check"></i> Finished';
-      statusText.textContent = `Scraper completed. ${stats.total_count || 239} matches updated (${newMatches} new, ${updatedMatches} refreshed) in ${duration}s.`;
+      statusText.textContent = `Scraper completed. ${stats.total_count || (tennisCount + footballCount)} matches updated (${newMatches} new, ${updatedMatches} refreshed) in ${duration}s.`;
       lastScrapeMeta.innerHTML = `<i class="fa-regular fa-clock"></i> Last scraped: ${lastTimeIST}`;
     } else {
       badge.innerHTML = '<i class="fa-solid fa-circle-check"></i> Idle';
-      statusText.textContent = `All ${stats.total_count || 239} matches up-to-date.`;
+      statusText.textContent = `All ${stats.total_count || (tennisCount + footballCount)} matches up-to-date.`;
     }
 
     if (data.next_run) {
       const nextDate = new Date(data.next_run);
       const diffMin = Math.max(1, Math.round((nextDate - new Date()) / 60000));
       nextScrapeMeta.innerHTML = `<i class="fa-solid fa-hourglass-half"></i> Next in ${diffMin}m`;
+    } else {
+      nextScrapeMeta.innerHTML = `<i class="fa-solid fa-clock"></i> Hourly Scrape Active`;
     }
   }
 }
 
-// GitHub Pages / Static JSON Fallback
+// GitHub Pages Static Fallback Loader
 async function checkStaticDataFallback() {
   try {
     let res;
     try {
-      res = await fetch('./data.json');
-      if (!res.ok) throw new Error('data.json not found at root');
+      res = await fetch(`./data.json?_t=${Date.now()}`);
+      if (!res.ok) throw new Error('data.json not at root');
     } catch {
-      res = await fetch('./static/data.json');
+      res = await fetch(`./static/data.json?_t=${Date.now()}`);
     }
+
     if (res && res.ok) {
       const staticData = await res.json();
       state.allMatchesCache = staticData.matches || { tennis: [], football: [] };
-      
-      const tennisCount = (staticData.matches?.tennis || []).length;
-      const footballCount = (staticData.matches?.football || []).length;
+      state.leaguesCache = staticData.leagues || { tennis: [], football: [] };
+
+      const tennisCount = (state.allMatchesCache.tennis || []).length;
+      const footballCount = (state.allMatchesCache.football || []).length;
       document.getElementById('tennisCountBadge').textContent = tennisCount;
       document.getElementById('footballCountBadge').textContent = footballCount;
-      
+
       const badge = document.getElementById('scraperStateBadge');
-      badge.innerHTML = '<i class="fa-solid fa-circle-check"></i> Static Archive';
-      document.getElementById('scraperStatusText').textContent = `Loaded ${tennisCount + footballCount} matches from static cache.`;
-      
+      badge.innerHTML = '<i class="fa-solid fa-circle-check"></i> Auto-Synced Archive';
+      document.getElementById('scraperStatusText').textContent = `Loaded ${tennisCount + footballCount} matches. Scraper updates hourly via GitHub Actions.`;
+
       if (staticData.exported_at) {
-        document.getElementById('lastScrapeMeta').innerHTML = `<i class="fa-regular fa-clock"></i> Exported: ${formatIST12Hour(staticData.exported_at, false)}`;
+        document.getElementById('lastScrapeMeta').innerHTML = `<i class="fa-regular fa-clock"></i> Exported: ${formatIST12Hour(staticData.exported_at)}`;
       }
-      
+      document.getElementById('nextScrapeMeta').innerHTML = `<i class="fa-solid fa-clock"></i> Hourly Auto-Scrape`;
+
+      updateLeagueDropdown();
       processAndRenderMatches(state.allMatchesCache[state.sport] || []);
     }
   } catch (e) {
@@ -168,7 +185,37 @@ async function checkStaticDataFallback() {
   }
 }
 
-// Fetch Matches from API or Cache
+// Populate Tournament / League Dropdown dynamically
+function updateLeagueDropdown() {
+  const select = document.getElementById('leagueSelect');
+  if (!select) return;
+
+  const currentVal = state.league || 'all';
+  select.innerHTML = '<option value="all">🏆 All Tournaments</option>';
+
+  let leagues = [];
+  if (state.leaguesCache && state.leaguesCache[state.sport]) {
+    leagues = state.leaguesCache[state.sport];
+  } else {
+    // Extract unique leagues from cached matches
+    const currentList = state.allMatchesCache[state.sport] || [];
+    const set = new Set();
+    currentList.forEach(m => {
+      if (m.league && m.league.trim()) set.add(m.league.trim());
+    });
+    leagues = Array.from(set).sort();
+  }
+
+  leagues.forEach(lg => {
+    const opt = document.createElement('option');
+    opt.value = lg;
+    opt.textContent = lg;
+    if (lg === currentVal) opt.selected = true;
+    select.appendChild(opt);
+  });
+}
+
+// Fetch Matches (API or Static Data)
 async function fetchMatches() {
   state.isLoading = true;
   updateLoadingState();
@@ -183,18 +230,19 @@ async function fetchMatches() {
   try {
     const params = new URLSearchParams({
       sport: state.sport,
-      sort_order: 'asc', // fetch all sorted by start time
+      sort_order: 'asc',
       limit: '1000'
     });
 
     const res = await fetch(`/api/matches?${params.toString()}`);
-    if (!res.ok) throw new Error('Matches API error');
+    if (!res.ok) throw new Error('API not available');
     const data = await res.json();
 
     const rawMatches = data.matches || [];
+    state.allMatchesCache[state.sport] = rawMatches;
+    updateLeagueDropdown();
     processAndRenderMatches(rawMatches);
   } catch (err) {
-    console.warn('API error, falling back to static data:', err);
     state.isStaticMode = true;
     await checkStaticDataFallback();
   } finally {
@@ -203,14 +251,14 @@ async function fetchMatches() {
   }
 }
 
-// Filter and Strict Start Time Chronological Sort
+// Filter, Sort, and Render Pipeline
 function processAndRenderMatches(rawList) {
   let list = [...rawList];
 
   // 1. Text Search Filter
   if (state.search.trim()) {
     const q = state.search.trim().toLowerCase();
-    list = list.filter(m => 
+    list = list.filter(m =>
       (m.home_name && m.home_name.toLowerCase().includes(q)) ||
       (m.away_name && m.away_name.toLowerCase().includes(q)) ||
       (m.league && m.league.toLowerCase().includes(q)) ||
@@ -218,37 +266,111 @@ function processAndRenderMatches(rawList) {
     );
   }
 
-  // 2. Value Bets (+EV) Filter
+  // 2. League / Tournament Filter
+  if (state.league && state.league !== 'all') {
+    const targetLg = state.league.toLowerCase();
+    list = list.filter(m => m.league && m.league.toLowerCase().includes(targetLg));
+  }
+
+  // 3. Value Bets (+EV) Filter
   if (state.valueOnly) {
     list = list.filter(m => m.has_value === 1);
   }
 
-  // 3. Strict Sort by Start Time (Ascending: Earliest to Latest)
-  // Ensures every match in XML is sorted in exact start time order regardless of finished/live status
-  list.sort((a, b) => (a.start_timestamp || 0) - (b.start_timestamp || 0));
+  // 4. IST Date Filter
+  if (state.dateFilter && state.dateFilter !== 'all') {
+    list = filterByDateIST(list, state.dateFilter);
+  }
 
-  // 4. Enrich status for live indicator
+  // 5. Smart Chronological & Status Sorting
+  list = sortMatchesSmart(list, state.sortOrder);
+
+  state.matches = list;
+  renderMatches();
+  updateSummary();
+}
+
+/**
+ * Smart Sorting:
+ * - 'soonest': Live in-progress matches first -> Upcoming matches (sorted soonest to latest) -> Past matches
+ * - 'asc': Strict earliest start time first
+ * - 'desc': Strict latest start time first
+ * - 'value': Value bets (+EV) first, sorted by highest edge
+ */
+function sortMatchesSmart(matches, sortMode) {
   const nowMs = Date.now();
   const TWO_AND_HALF_HOURS = 2.5 * 60 * 60 * 1000;
-  list = list.map(m => {
+
+  const enriched = matches.map(m => {
     const matchTimeMs = (m.start_timestamp || 0) * 1000;
     const diff = matchTimeMs - nowMs;
+
     let status = 'upcoming';
     if (diff <= 0 && Math.abs(diff) < TWO_AND_HALF_HOURS) {
       status = 'live';
     } else if (diff < -TWO_AND_HALF_HOURS) {
       status = 'past';
     }
+
+    const isDelayed = status === 'live' && Math.abs(diff) > 45 * 60 * 1000;
+
     return {
       ...m,
+      _matchTimeMs: matchTimeMs,
+      _diff: diff,
       _status: status,
-      _isDelayed: status === 'live' && Math.abs(diff) > 45 * 60 * 1000
+      _isDelayed: isDelayed
     };
   });
 
-  state.matches = list;
-  renderMatches();
-  updateSummary();
+  if (sortMode === 'soonest') {
+    return enriched.sort((a, b) => {
+      const rank = { live: 1, upcoming: 2, past: 3 };
+      if (rank[a._status] !== rank[b._status]) {
+        return rank[a._status] - rank[b._status];
+      }
+      if (a._status === 'upcoming' || a._status === 'live') {
+        return a._matchTimeMs - b._matchTimeMs;
+      }
+      return b._matchTimeMs - a._matchTimeMs;
+    });
+  } else if (sortMode === 'asc') {
+    return enriched.sort((a, b) => a._matchTimeMs - b._matchTimeMs);
+  } else if (sortMode === 'desc') {
+    return enriched.sort((a, b) => b._matchTimeMs - a._matchTimeMs);
+  } else if (sortMode === 'value') {
+    return enriched.sort((a, b) => (b.has_value || 0) - (a.has_value || 0) || a._matchTimeMs - b._matchTimeMs);
+  }
+
+  return enriched;
+}
+
+// Date filtering in Indian Standard Time (IST, UTC+5:30)
+function filterByDateIST(matches, filterType) {
+  const istOffset = 5.5 * 60 * 60 * 1000;
+  const now = new Date();
+  const istNow = new Date(now.getTime() + istOffset);
+
+  const istTodayY = istNow.getUTCFullYear();
+  const istTodayM = istNow.getUTCMonth();
+  const istTodayD = istNow.getUTCDate();
+
+  const todayStartUTC = Date.UTC(istTodayY, istTodayM, istTodayD) - istOffset;
+  const tomorrowStartUTC = todayStartUTC + 86400000;
+  const dayAfterStartUTC = tomorrowStartUTC + 86400000;
+  const upcomingEndUTC = todayStartUTC + (86400000 * 3);
+
+  return matches.filter(m => {
+    const t = (m.start_timestamp || 0) * 1000;
+    if (filterType === 'today') {
+      return t >= todayStartUTC && t < tomorrowStartUTC;
+    } else if (filterType === 'tomorrow') {
+      return t >= tomorrowStartUTC && t < dayAfterStartUTC;
+    } else if (filterType === 'upcoming') {
+      return t >= todayStartUTC && t < upcomingEndUTC;
+    }
+    return true;
+  });
 }
 
 // Render Match Cards to Grid
@@ -276,9 +398,9 @@ function getShortSurname(name) {
 
 /**
  * Format timestamp in 12-Hour IST Time (Indian Standard Time, UTC+5:30)
- * Example: '05:55 PM · Aug 28'
+ * Example: '8:30 PM · Aug 28'
  */
-function formatIST12Hour(isoOrTimestamp, includeTzLabel = true) {
+function formatIST12Hour(isoOrTimestamp) {
   if (!isoOrTimestamp) return 'Time TBA';
   const date = typeof isoOrTimestamp === 'number' ? new Date(isoOrTimestamp * 1000) : new Date(isoOrTimestamp);
   if (isNaN(date.getTime())) return 'Time TBA';
@@ -313,7 +435,7 @@ function formatIST12Hour(isoOrTimestamp, includeTzLabel = true) {
 function createMatchCardHTML(m) {
   const isTennis = m.sport === 'tennis';
   const timeFormattedIST = formatIST12Hour(m.start_timestamp || m.start_time);
-  
+
   // Win probabilities
   const homeProb = m.home_prob !== null && m.home_prob !== undefined ? Math.round(m.home_prob) : null;
   const awayProb = m.away_prob !== null && m.away_prob !== undefined ? Math.round(m.away_prob) : null;
@@ -334,7 +456,7 @@ function createMatchCardHTML(m) {
   const hasValue = m.has_value === 1;
   const valueSide = m.value_side;
 
-  // Avatars — use data-fallback for safe onerror handling (no inline innerHTML injection)
+  // Avatars (Safe error handling with data-fallback attribute)
   const homeAvatarHTML = m.home_avatar
     ? `<img src="${escapeHtml(m.home_avatar)}" alt="${escapeHtml(m.home_name)}" onerror="this.style.display='none';this.parentElement.textContent=this.parentElement.dataset.fallback||'??'"/>`
     : escapeHtml(m.home_initials || '??');
@@ -514,7 +636,7 @@ function escapeHtml(text) {
     .replace(/'/g, '&#039;');
 }
 
-// Filter Actions
+// Filter Event Handlers
 function handleSearchInput() {
   const val = document.getElementById('searchInput').value;
   document.getElementById('clearSearchBtn').style.display = val ? 'block' : 'none';
@@ -522,7 +644,7 @@ function handleSearchInput() {
   clearTimeout(state.searchDebounceTimer);
   state.searchDebounceTimer = setTimeout(() => {
     state.search = val;
-    fetchMatches();
+    applyFilters();
   }, 250);
 }
 
@@ -530,24 +652,37 @@ function clearSearch() {
   document.getElementById('searchInput').value = '';
   document.getElementById('clearSearchBtn').style.display = 'none';
   state.search = '';
-  fetchMatches();
+  applyFilters();
 }
 
 function applyFilters() {
-  state.league = document.getElementById('leagueSelect').value;
-  state.dateFilter = document.getElementById('dateSelect').value;
-  state.sortOrder = document.getElementById('sortSelect').value;
-  state.valueOnly = document.getElementById('valueOnlyToggle').checked;
-  fetchMatches();
+  const leagueSelect = document.getElementById('leagueSelect');
+  const dateSelect = document.getElementById('dateSelect');
+  const sortSelect = document.getElementById('sortSelect');
+  const valueToggle = document.getElementById('valueOnlyToggle');
+
+  if (leagueSelect) state.league = leagueSelect.value;
+  if (dateSelect) state.dateFilter = dateSelect.value;
+  if (sortSelect) state.sortOrder = sortSelect.value;
+  if (valueToggle) state.valueOnly = valueToggle.checked;
+
+  const currentList = state.allMatchesCache[state.sport] || [];
+  processAndRenderMatches(currentList);
 }
 
 function resetFilters() {
   document.getElementById('searchInput').value = '';
   document.getElementById('clearSearchBtn').style.display = 'none';
-  document.getElementById('leagueSelect').value = 'all';
-  document.getElementById('dateSelect').value = 'all';
-  document.getElementById('sortSelect').value = 'soonest';
-  document.getElementById('valueOnlyToggle').checked = false;
+
+  const leagueSelect = document.getElementById('leagueSelect');
+  const dateSelect = document.getElementById('dateSelect');
+  const sortSelect = document.getElementById('sortSelect');
+  const valueToggle = document.getElementById('valueOnlyToggle');
+
+  if (leagueSelect) leagueSelect.value = 'all';
+  if (dateSelect) dateSelect.value = 'all';
+  if (sortSelect) sortSelect.value = 'soonest';
+  if (valueToggle) valueToggle.checked = false;
 
   state.search = '';
   state.league = 'all';
@@ -555,7 +690,8 @@ function resetFilters() {
   state.sortOrder = 'soonest';
   state.valueOnly = false;
 
-  fetchMatches();
+  const currentList = state.allMatchesCache[state.sport] || [];
+  processAndRenderMatches(currentList);
 }
 
 function updateSummary() {
@@ -576,17 +712,33 @@ function updateLoadingState() {
   }
 }
 
-// Manual Sync Trigger
+// Manual Sync Trigger (Handles both Live Backend & GitHub Pages Static Mode)
 async function triggerManualSync() {
   const btn = document.getElementById('syncNowBtn');
   btn.classList.add('spinning');
   btn.disabled = true;
-  showToast('Starting match sync...', 'info');
 
+  if (state.isStaticMode) {
+    showToast('Refreshing latest match data from GitHub...', 'info');
+    try {
+      await checkStaticDataFallback();
+      showToast('Matches & odds refreshed successfully!', 'success');
+    } catch (e) {
+      showToast('Unable to reach GitHub data cache', 'error');
+    } finally {
+      setTimeout(() => {
+        btn.classList.remove('spinning');
+        btn.disabled = false;
+      }, 1200);
+    }
+    return;
+  }
+
+  showToast('Starting real-time scraper sync...', 'info');
   try {
     const res = await fetch('/api/scrape/trigger', { method: 'POST' });
     const data = await res.json();
-    
+
     if (data.status === 'started') {
       showToast('Scraper started! Fetching latest odds and new matches...', 'success');
       pollScraperStatus();
@@ -594,12 +746,15 @@ async function triggerManualSync() {
       showToast(data.message || 'Scraper already running', 'info');
     }
   } catch (err) {
-    showToast('Failed to connect to scraper API', 'error');
+    // If backend failed, switch to static refresh
+    state.isStaticMode = true;
+    await checkStaticDataFallback();
+    showToast('Switched to static archive. Refreshed data!', 'info');
   } finally {
     setTimeout(() => {
       btn.classList.remove('spinning');
       btn.disabled = false;
-    }, 2000);
+    }, 1500);
   }
 }
 
