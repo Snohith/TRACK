@@ -139,30 +139,46 @@ def determine_value_bet(
     home_prob: Optional[float], away_prob: Optional[float], draw_prob: Optional[float],
     m_home: Optional[float], m_away: Optional[float], m_draw: Optional[float]
 ) -> tuple[int, Optional[str], float]:
-    candidates = []
+    """
+    EV Value Bet Logic:
+    Always looks for an expected value edge on the HIGHEST PROBABLE player/team (favorite).
+    Only returns a value bet if the most likely winner offers positive expected value (EV > 0).
+    """
+    hp = float(home_prob or 0.0)
+    ap = float(away_prob or 0.0)
+    dp = float(draw_prob or 0.0)
 
-    # Home side EV
-    if home_prob and m_home:
-        ev_home = calculate_ev(home_prob, m_home)
-        if ev_home > 0:
-            candidates.append(("home", ev_home))
+    if hp == 0 and ap == 0 and dp == 0:
+        return 0, None, 0.0
 
-    # Away side EV
-    if away_prob and m_away:
-        ev_away = calculate_ev(away_prob, m_away)
-        if ev_away > 0:
-            candidates.append(("away", ev_away))
+    # 1. Tennis (2-way) or football without draw prob
+    if sport == "tennis" or not draw_prob:
+        if hp > ap:
+            fav_side, prob, odds = "home", hp, m_home
+        elif ap > hp:
+            fav_side, prob, odds = "away", ap, m_away
+        else:
+            # 50-50 tie break: check which 50% player has better +EV
+            ev_h = calculate_ev(hp, m_home)
+            ev_a = calculate_ev(ap, m_away)
+            if max(ev_h, ev_a) > 0:
+                side = "home" if ev_h >= ev_a else "away"
+                return 1, side, max(ev_h, ev_a)
+            return 0, None, 0.0
 
-    # Football 3-way Draw EV
-    if sport == "football" and draw_prob and m_draw:
-        ev_draw = calculate_ev(draw_prob, m_draw)
-        if ev_draw > 0:
-            candidates.append(("draw", ev_draw))
+    # 2. Football (3-way)
+    else:
+        max_p = max(hp, dp, ap)
+        if max_p == hp:
+            fav_side, prob, odds = "home", hp, m_home
+        elif max_p == ap:
+            fav_side, prob, odds = "away", ap, m_away
+        else:
+            fav_side, prob, odds = "draw", dp, m_draw
 
-    if candidates:
-        candidates.sort(key=lambda x: x[1], reverse=True)
-        best_side, best_ev = candidates[0]
-        return 1, best_side, best_ev
+    ev = calculate_ev(prob, odds)
+    if ev > 0:
+        return 1, fav_side, ev
 
     return 0, None, 0.0
 
