@@ -407,22 +407,53 @@ def purge_legacy_finished_matches(active_sitemap_ids: set) -> int:
         return len(to_delete)
 
 def sync_finished_matches(active_sitemap_ids: set) -> int:
-    """Marks matches that have dropped from the sitemap as finished."""
-    now_iso = datetime.now(timezone.utc).isoformat()
+    """
+    Intelligently syncs matches when they drop from the sitemap:
+    - If a match dropped from sitemap but started < 2.5h ago (tennis) or < 2.25h ago (football),
+      it is LIVE IN PROGRESS (is_finished = 0, in_sitemap = 0).
+    - If a match started >= duration threshold, it transitions to FINISHED (is_finished = 1).
+    """
+    now_utc = datetime.now(timezone.utc)
+    now_ts = int(now_utc.timestamp())
+    now_iso = now_utc.isoformat()
+
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT id FROM matches WHERE in_sitemap = 1")
-        tracked_ids = [r[0] for r in cursor.fetchall()]
         
-        finished_ids = [mid for mid in tracked_ids if mid not in active_sitemap_ids]
-        for mid in finished_ids:
-            cursor.execute("""
-            UPDATE matches 
-            SET in_sitemap = 0, is_finished = 1, finished_at = COALESCE(finished_at, ?) 
-            WHERE id = ?
-            """, (now_iso, mid))
+        # 1. Update matches currently tracked that dropped from sitemap
+        cursor.execute("SELECT id, sport, start_timestamp FROM matches WHERE in_sitemap = 1")
+        tracked = cursor.fetchall()
+        
+        finished_count = 0
+        for r in tracked:
+            mid = r["id"]
+            if mid not in active_sitemap_ids:
+                sport = r["sport"]
+                start_ts = r["start_timestamp"] or now_ts
+                thresh_sec = 150 * 60 if sport == "tennis" else 135 * 60
+                
+                is_fin = 1 if (now_ts - start_ts) >= thresh_sec else 0
+                cursor.execute("""
+                UPDATE matches 
+                SET in_sitemap = 0, is_finished = ?, finished_at = CASE WHEN ? = 1 THEN COALESCE(finished_at, ?) ELSE finished_at END 
+                WHERE id = ?
+                """, (is_fin, is_fin, now_iso, mid))
+                if is_fin:
+                    finished_count += 1
+
+        # 2. Check in-play matches (in_sitemap = 0 and is_finished = 0) to see if they have reached finished threshold
+        cursor.execute("SELECT id, sport, start_timestamp FROM matches WHERE in_sitemap = 0 AND is_finished = 0")
+        in_play = cursor.fetchall()
+        for r in in_play:
+            sport = r["sport"]
+            start_ts = r["start_timestamp"] or now_ts
+            thresh_sec = 150 * 60 if sport == "tennis" else 135 * 60
+            if (now_ts - start_ts) >= thresh_sec:
+                cursor.execute("UPDATE matches SET is_finished = 1, finished_at = COALESCE(finished_at, ?) WHERE id = ?", (now_iso, r["id"]))
+                finished_count += 1
+
         conn.commit()
-        return len(finished_ids)
+        return finished_count
 
 def get_matches(
     sport: Optional[str] = None,
