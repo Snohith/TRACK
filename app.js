@@ -205,6 +205,39 @@ function setFinishedCategory(cat) {
   refreshCurrentView();
 }
 
+// Open native/browser calendar picker
+function openCalendarPicker() {
+  const input = document.getElementById('finishedCustomDatePicker');
+  if (!input) return;
+  try {
+    if (typeof input.showPicker === 'function') {
+      input.showPicker();
+    } else {
+      input.focus();
+      input.click();
+    }
+  } catch (e) {
+    input.focus();
+    input.click();
+  }
+}
+
+// Convert YYYY-MM-DD from calendar picker into match IST format (e.g. 'Aug 29')
+function parseISODateToFormatted(isoDateStr) {
+  if (!isoDateStr) return 'all';
+  const parts = isoDateStr.split('-');
+  if (parts.length !== 3) return 'all';
+  const dateObj = new Date(Date.UTC(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]), 12, 0, 0));
+  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(dateObj);
+}
+
+// Handle date selection from calendar picker input
+function handleCustomDateSelect(isoDate) {
+  if (!isoDate) return;
+  const formatted = parseISODateToFormatted(isoDate);
+  setFinishedDate(formatted);
+}
+
 // Finished Matches Single-Date Switcher (e.g. 'all', 'Aug 29', 'Aug 30')
 function setFinishedDate(dateStr) {
   state.finishedDateFilter = dateStr;
@@ -226,8 +259,23 @@ function updateFinishedDateDropdown() {
   });
 
   const dates = Array.from(dateSet).sort((a, b) => b.localeCompare(a));
+  const isAll = state.finishedDateFilter === 'all';
+  const calendarLabel = !isAll ? state.finishedDateFilter : 'Pick Date';
 
-  let html = `<button class="fin-pill-btn fin-date-btn ${state.finishedDateFilter === 'all' ? 'active' : ''}" onclick="setFinishedDate('all')"><i class="fa-solid fa-calendar-days"></i> All Dates</button>`;
+  let html = `
+    <button class="fin-pill-btn fin-date-btn ${isAll ? 'active' : ''}" onclick="setFinishedDate('all')">
+      <i class="fa-solid fa-calendar-days"></i> All Dates
+    </button>
+    <div class="calendar-picker-wrapper">
+      <button class="fin-pill-btn calendar-btn ${!isAll ? 'active' : ''}" id="finCalendarBtn" onclick="openCalendarPicker()">
+        <i class="fa-regular fa-calendar-plus text-brand"></i>
+        <span id="calendarBtnText">${calendarLabel}</span>
+        <i class="fa-solid fa-chevron-down text-muted" style="font-size: 9px; margin-left: 2px;"></i>
+      </button>
+      <input type="date" id="finishedCustomDatePicker" class="hidden-date-input" onchange="handleCustomDateSelect(this.value)" />
+    </div>
+  `;
+
   dates.forEach(d => {
     const isActive = state.finishedDateFilter === d ? 'active' : '';
     html += `<button class="fin-pill-btn fin-date-btn ${isActive}" onclick="setFinishedDate('${d}')"><i class="fa-regular fa-calendar"></i> ${d}</button>`;

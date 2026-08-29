@@ -1996,4 +1996,46 @@ button, .tab-btn, .view-btn, .val-sort-btn, select {
   box-shadow: 0 1px 3px rgba(99, 102, 241, 0.15);
 }
 
+/* Calendar Date Picker Interactive Button */
+.calendar-picker-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.hidden-date-input {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.fin-pill-btn.calendar-btn {
+  background: #FFFFFF;
+  border: 1px dashed #CBD5E1;
+  color: #475569;
+  cursor: pointer;
+  position: relative;
+  user-select: none;
+}
+
+.fin-pill-btn.calendar-btn:hover {
+  border-color: #6366F1;
+  border-style: solid;
+  background: #F8FAFC;
+  color: #4338CA;
+}
+
+.fin-pill-btn.calendar-btn.active {
+  background: #EEF2FF !important;
+  color: #4338CA !important;
+  border: 1px solid #6366F1 !important;
+  font-weight: 700 !important;
+  box-shadow: 0 1px 3px rgba(99, 102, 241, 0.15);
+}
+
 
