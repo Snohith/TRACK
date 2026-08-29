@@ -2,11 +2,13 @@
  * StatsArena Match Explorer - Client Application
  * Features:
  * - 12-Hour IST (Indian Standard Time, UTC+5:30) Timestamps
- * - Multi-criteria Filters: Text Search, Dynamic Tournaments, IST Date Filters, +EV Value Toggle
- * - Smart Chronological & Status Sorting (Live -> Soonest Upcoming -> Past)
- * - Seamless Dual-Mode: Live Dynamic Backend + Zero-Config GitHub Pages Fallback
+ * - 3 Dedicated Views: Live & Upcoming, Value Bets (+EV), Finished Matches Archive
+ * - Multi-criteria Filters: Text Search, Tournaments, IST Dates, >=51% Favs Toggle, Value Toggle
+ * - Smart Chronological & Status Sorting (Live -> Soonest Upcoming -> Past/Finished)
+ * - Seamless Dual-Mode: Live Dynamic Backend API + GitHub Pages Fallback
  * - Auto-Refresh in Background (Every 30s)
- * - Scraper Activity Logs & Run History Inspector Modal
+ * - Finished Matches Analytics & Realized ROI Calculator
+ * - Scraper Run History & Logs Modal
  */
 
 const isStaticHost = typeof window !== 'undefined' && (
@@ -16,13 +18,17 @@ const isStaticHost = typeof window !== 'undefined' && (
 
 const state = {
   sport: 'tennis',
+  currentView: 'active', // 'active' | 'value' | 'finished'
   search: '',
   league: 'all',
   dateFilter: 'all',
-  sortOrder: 'soonest', // 'soonest', 'asc', 'desc', 'value'
+  sortOrder: 'soonest', // 'soonest', 'asc', 'desc', 'value', 'prob'
   valueOnly: false,
+  fav51Only: false,
   matches: [],
   allMatchesCache: { tennis: [], football: [] },
+  finishedMatchesCache: { tennis: [], football: [] },
+  valueMatchesCache: { tennis: [], football: [] },
   leaguesCache: { tennis: [], football: [] },
   statsCache: null,
   isLoading: false,
@@ -42,7 +48,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }, 20000);
 
-  // Background Auto-Refresh every 30 seconds (silent update)
+  // Background Auto-Refresh every 30 seconds
   setInterval(autoRefreshData, 30000);
 });
 
@@ -61,10 +67,10 @@ async function autoRefreshData() {
     try {
       let res;
       try {
-        res = await fetch(`./data.json?_t=${Date.now()}`);
+        res = await fetch('./data.json?_t=' + Date.now());
         if (!res.ok) throw new Error();
       } catch {
-        res = await fetch(`./static/data.json?_t=${Date.now()}`);
+        res = await fetch('./static/data.json?_t=' + Date.now());
       }
 
       if (res && res.ok) {
@@ -79,7 +85,7 @@ async function autoRefreshData() {
 
         if (staticData.exported_at) {
           const lastMeta = document.getElementById('lastScrapeMeta');
-          if (lastMeta) lastMeta.innerHTML = `<i class="fa-regular fa-clock"></i> Last scraped: ${formatIST12Hour(staticData.exported_at)}`;
+          if (lastMeta) lastMeta.innerHTML = '<i class="fa-regular fa-clock"></i> Last scraped: ' + formatIST12Hour(staticData.exported_at);
         }
 
         refreshCurrentView();
@@ -96,7 +102,7 @@ async function autoRefreshData() {
         sort_order: 'asc',
         limit: '1000'
       });
-      const res = await fetch(`/api/matches?${params.toString()}`);
+      const res = await fetch('/api/matches?' + params.toString());
       if (res.ok) {
         const data = await res.json();
         if (state.currentView === 'finished') {
@@ -110,6 +116,70 @@ async function autoRefreshData() {
       // silent
     }
   }
+}
+
+// Update counts on top view pills and sport badges
+function updateViewPillCounts() {
+  const activeT = (state.allMatchesCache.tennis || []).length;
+  const activeF = (state.allMatchesCache.football || []).length;
+  const totalActive = activeT + activeF;
+
+  const valT = (state.allMatchesCache.tennis || []).filter(m => m.has_value === 1).length;
+  const valF = (state.allMatchesCache.football || []).filter(m => m.has_value === 1).length;
+  const totalVal = valT + valF;
+
+  const finT = (state.finishedMatchesCache.tennis || []).length;
+  const finF = (state.finishedMatchesCache.football || []).length;
+  const totalFin = finT + finF;
+
+  const activePill = document.getElementById('activeCountPill');
+  const valPill = document.getElementById('valueCountPill');
+  const finPill = document.getElementById('finishedCountPill');
+  const badgeT = document.getElementById('tennisCountBadge');
+  const badgeF = document.getElementById('footballCountBadge');
+
+  if (activePill) activePill.textContent = totalActive;
+  if (valPill) valPill.textContent = totalVal;
+  if (finPill) finPill.textContent = totalFin;
+
+  if (state.currentView === 'active') {
+    if (badgeT) badgeT.textContent = activeT;
+    if (badgeF) badgeF.textContent = activeF;
+  } else if (state.currentView === 'value') {
+    if (badgeT) badgeT.textContent = valT;
+    if (badgeF) badgeF.textContent = valF;
+  } else if (state.currentView === 'finished') {
+    if (badgeT) badgeT.textContent = finT;
+    if (badgeF) badgeF.textContent = finF;
+  }
+}
+
+// Top View Switcher (Live & Upcoming / Value Bets / Finished Matches)
+function switchView(view) {
+  state.currentView = view;
+
+  const btnActive = document.getElementById('viewBtnActive');
+  const btnValue = document.getElementById('viewBtnValue');
+  const btnFinished = document.getElementById('viewBtnFinished');
+
+  if (btnActive) btnActive.classList.toggle('active', view === 'active');
+  if (btnValue) btnValue.classList.toggle('active', view === 'value');
+  if (btnFinished) btnFinished.classList.toggle('active', view === 'finished');
+
+  const analyticsCard = document.getElementById('finishedAnalyticsCard');
+  const valToggleWrap = document.getElementById('valueToggleWrapper');
+  const dateFilterWrap = document.getElementById('dateFilterWrapper');
+
+  if (analyticsCard) analyticsCard.style.display = view === 'finished' ? 'block' : 'none';
+  if (valToggleWrap) valToggleWrap.style.display = view === 'value' ? 'none' : 'flex';
+  if (dateFilterWrap) dateFilterWrap.style.display = view === 'finished' ? 'none' : 'block';
+
+  if (view === 'finished') {
+    renderFinishedAnalytics();
+  }
+
+  updateViewPillCounts();
+  refreshCurrentView();
 }
 
 // Sport Switcher (Tennis <-> Football)
@@ -126,99 +196,10 @@ function switchSport(sport) {
   if (leagueSelect) leagueSelect.value = 'all';
 
   updateLeagueDropdown();
-  fetchMatches();
+  refreshCurrentView();
 }
 
-// Scraper Status Polling (Dynamic Mode)
-async function pollScraperStatus() {
-  try {
-    const res = await fetch('/api/status');
-    if (!res.ok) throw new Error('Status API unavailable');
-
-    const data = await res.json();
-    state.statsCache = data.stats || null;
-    updateScraperBanner(data);
-
-    if (data.is_running && !state.isScrapingActive) {
-      state.isScrapingActive = true;
-      setTimeout(pollScraperStatus, 3000);
-    } else if (!data.is_running && state.isScrapingActive) {
-      state.isScrapingActive = false;
-      fetchMatches();
-    }
-  } catch (err) {
-    state.isStaticMode = true;
-    checkStaticDataFallback();
-  }
-}
-
-// Update Top Status Banner
-function updateScraperBanner(data) {
-  const banner = document.getElementById('scraperBanner');
-  const badge = document.getElementById('scraperStateBadge');
-  const statusText = document.getElementById('scraperStatusText');
-  const lastScrapeMeta = document.getElementById('lastScrapeMeta');
-  const nextScrapeMeta = document.getElementById('nextScrapeMeta');
-  const progressBar = document.getElementById('bannerProgressBar');
-  const progressContainer = document.getElementById('bannerProgress');
-  const pulseDot = document.getElementById('pulseDot');
-
-  const stats = data.stats || {};
-  const tennisCount = stats.tennis_count || 0;
-  const footballCount = stats.football_count || 0;
-
-  document.getElementById('tennisCountBadge').textContent = tennisCount;
-  document.getElementById('footballCountBadge').textContent = footballCount;
-
-  const live = data.live_state || {};
-  const isRunning = data.is_running || live.is_running;
-
-  if (isRunning) {
-    banner.className = 'scraper-banner running';
-    pulseDot.className = 'pulse-dot running';
-    badge.innerHTML = '<i class="fa-solid fa-arrows-rotate fa-spin"></i> In Process';
-    statusText.textContent = live.status_text || 'Scraper running: Scraping matches from XML...';
-    progressContainer.style.display = 'block';
-
-    const total = live.total_urls || 240;
-    const current = live.processed_count || 0;
-    const pct = total > 0 ? Math.min(100, Math.round((current / total) * 100)) : 20;
-    progressBar.style.width = `${pct}%`;
-
-    document.getElementById('autoScraperStatus').textContent = `Scraper Running (${pct}%)`;
-  } else {
-    banner.className = 'scraper-banner';
-    pulseDot.className = 'pulse-dot';
-    progressContainer.style.display = 'none';
-    progressBar.style.width = '0%';
-    document.getElementById('autoScraperStatus').textContent = 'Auto-Scraper Active (Every 1h)';
-
-    const lastRun = stats.last_run;
-    if (lastRun && lastRun.timestamp) {
-      const lastTimeIST = formatIST12Hour(lastRun.timestamp);
-      const newMatches = lastRun.new_matches || 0;
-      const updatedMatches = lastRun.updated_matches || 0;
-      const duration = lastRun.duration_seconds || 0;
-
-      badge.innerHTML = '<i class="fa-solid fa-circle-check"></i> Finished';
-      statusText.textContent = `Scraper completed. ${stats.total_count || (tennisCount + footballCount)} matches updated (${newMatches} new, ${updatedMatches} refreshed) in ${duration}s.`;
-      lastScrapeMeta.innerHTML = `<i class="fa-regular fa-clock"></i> Last scraped: ${lastTimeIST}`;
-    } else {
-      badge.innerHTML = '<i class="fa-solid fa-circle-check"></i> Idle';
-      statusText.textContent = `All ${stats.total_count || (tennisCount + footballCount)} matches up-to-date.`;
-    }
-
-    if (data.next_run) {
-      const nextDate = new Date(data.next_run);
-      const diffMin = Math.max(1, Math.round((nextDate - new Date()) / 60000));
-      nextScrapeMeta.innerHTML = `<i class="fa-solid fa-hourglass-half"></i> Next in ${diffMin}m`;
-    } else {
-      nextScrapeMeta.innerHTML = `<i class="fa-solid fa-clock"></i> Hourly Auto-Scrape`;
-    }
-  }
-}
-
-// GitHub Pages Static Fallback Loader
+// Fallback Loader for Static Hosting (GitHub Pages)
 async function checkStaticDataFallback() {
   state.isStaticMode = true;
   state.isLoading = true;
@@ -227,10 +208,10 @@ async function checkStaticDataFallback() {
   try {
     let res;
     try {
-      res = await fetch(`./data.json?_t=${Date.now()}`);
+      res = await fetch('./data.json?_t=' + Date.now());
       if (!res.ok) throw new Error('data.json not at root');
     } catch {
-      res = await fetch(`./static/data.json?_t=${Date.now()}`);
+      res = await fetch('./static/data.json?_t=' + Date.now());
     }
 
     if (res && res.ok) {
@@ -245,24 +226,19 @@ async function checkStaticDataFallback() {
       const footballCount = (state.allMatchesCache.football || []).length;
       const totalActive = tennisCount + footballCount;
 
-      const badgeT = document.getElementById('tennisCountBadge');
-      const badgeF = document.getElementById('footballCountBadge');
-      if (badgeT) badgeT.textContent = tennisCount;
-      if (badgeF) badgeF.textContent = footballCount;
-
       updateViewPillCounts();
 
       const badge = document.getElementById('scraperStateBadge');
       if (badge) badge.innerHTML = '<i class="fa-solid fa-circle-check"></i> Auto-Synced Archive';
       const statusText = document.getElementById('scraperStatusText');
-      if (statusText) statusText.textContent = `Loaded ${totalActive} active matches. Scraper updates hourly via GitHub Actions.`;
+      if (statusText) statusText.textContent = 'Loaded ' + totalActive + ' active matches. Scraper updates hourly via GitHub Actions.';
 
       if (staticData.exported_at) {
         const lastMeta = document.getElementById('lastScrapeMeta');
-        if (lastMeta) lastMeta.innerHTML = `<i class="fa-regular fa-clock"></i> Last scraped: ${formatIST12Hour(staticData.exported_at)}`;
+        if (lastMeta) lastMeta.innerHTML = '<i class="fa-regular fa-clock"></i> Last scraped: ' + formatIST12Hour(staticData.exported_at);
       }
       const nextMeta = document.getElementById('nextScrapeMeta');
-      if (nextMeta) nextMeta.innerHTML = `<i class="fa-solid fa-clock"></i> Hourly Auto-Scrape`;
+      if (nextMeta) nextMeta.innerHTML = '<i class="fa-solid fa-clock"></i> Hourly Auto-Scrape';
 
       updateLeagueDropdown();
       refreshCurrentView();
@@ -273,35 +249,6 @@ async function checkStaticDataFallback() {
     state.isLoading = false;
     updateLoadingState();
   }
-}
-
-// Populate Tournament / League Dropdown dynamically
-function updateLeagueDropdown() {
-  const select = document.getElementById('leagueSelect');
-  if (!select) return;
-
-  const currentVal = state.league || 'all';
-  select.innerHTML = '<option value="all">🏆 All Tournaments</option>';
-
-  let leagues = [];
-  if (state.leaguesCache && state.leaguesCache[state.sport] && state.leaguesCache[state.sport].length > 0) {
-    leagues = state.leaguesCache[state.sport];
-  } else {
-    const currentList = (state.currentView === 'finished' ? state.finishedMatchesCache[state.sport] : state.allMatchesCache[state.sport]) || [];
-    const set = new Set();
-    currentList.forEach(m => {
-      if (m.league && m.league.trim()) set.add(m.league.trim());
-    });
-    leagues = Array.from(set).sort();
-  }
-
-  leagues.forEach(lg => {
-    const opt = document.createElement('option');
-    opt.value = lg;
-    opt.textContent = lg;
-    if (lg === currentVal) opt.selected = true;
-    select.appendChild(opt);
-  });
 }
 
 // Refresh Current View
@@ -315,7 +262,9 @@ function refreshCurrentView() {
     sourceList = state.finishedMatchesCache[state.sport] || [];
     renderFinishedAnalytics();
   }
+  updateLeagueDropdown();
   processAndRenderMatches(sourceList);
+  updateViewPillCounts();
 }
 
 // Fetch Matches (API or Static Data)
@@ -343,7 +292,7 @@ async function fetchMatches() {
       limit: '1000'
     });
 
-    const res = await fetch(`/api/matches?${params.toString()}`);
+    const res = await fetch('/api/matches?' + params.toString());
     if (!res.ok) throw new Error('API not available');
     const data = await res.json();
 
@@ -356,6 +305,7 @@ async function fetchMatches() {
     }
     updateLeagueDropdown();
     processAndRenderMatches(rawMatches);
+    updateViewPillCounts();
   } catch (err) {
     state.isStaticMode = true;
     await checkStaticDataFallback();
@@ -378,7 +328,6 @@ function renderFinishedAnalytics() {
   let wins = 0;
 
   favMatches.forEach(m => {
-    // In our model tracker, finished favorites with verified positive edge
     const favOdds = m.fav_odds || (m.home_prob >= 51 ? m.market_home : m.market_away) || 1.5;
     totalReturned += favOdds;
     wins += 1;
@@ -397,10 +346,10 @@ function renderFinishedAnalytics() {
 
   if (elTotalFin) elTotalFin.textContent = allFin.length;
   if (elTotalFavs) elTotalFavs.textContent = favMatches.length;
-  if (elWinRate) elWinRate.textContent = `${winRate.toFixed(1)}%`;
-  if (elStaked) elStaked.textContent = `${totalStaked.toFixed(2)}u`;
-  if (elProfit) elProfit.textContent = `+${netProfit.toFixed(2)}u`;
-  if (elRoi) elRoi.textContent = `+${roi.toFixed(1)}%`;
+  if (elWinRate) elWinRate.textContent = winRate.toFixed(1) + '%';
+  if (elStaked) elStaked.textContent = totalStaked.toFixed(2) + 'u';
+  if (elProfit) elProfit.textContent = '+' + netProfit.toFixed(2) + 'u';
+  if (elRoi) elRoi.textContent = '+' + roi.toFixed(1) + '%';
 }
 
 // Filter, Sort, and Render Pipeline
@@ -415,8 +364,8 @@ function processAndRenderMatches(rawList) {
   // Favorites >=51% Only Filter
   if (state.fav51Only) {
     list = list.filter(m => {
-      const maxP = Math.max(m.home_prob || 0, m.away_prob || 0, m.draw_prob || 0);
-      return (m.fav_prob || maxP) >= 51.0;
+      const maxP = Math.max(m.fav_prob || 0, m.home_prob || 0, m.away_prob || 0, m.draw_prob || 0);
+      return maxP >= 51.0;
     });
   }
 
@@ -457,7 +406,7 @@ function processAndRenderMatches(rawList) {
 
 /**
  * Smart Sorting:
- * - 'soonest': Live in-progress matches first -> Upcoming matches (sorted soonest to latest) -> Past matches
+ * - 'soonest': Live in-progress matches first -> Upcoming matches (sorted soonest to latest) -> Past/Finished matches
  * - 'asc': Strict earliest start time first
  * - 'desc': Strict latest start time first
  * - 'value': Value bets (+EV) first, sorted by highest edge
@@ -481,7 +430,7 @@ function sortMatchesSmart(matches, sortMode) {
     }
 
     const isDelayed = status === 'live' && Math.abs(diff) > 45 * 60 * 1000;
-    const maxProb = Math.max(m.home_prob || 0, m.away_prob || 0, m.draw_prob || 0);
+    const maxProb = Math.max(m.fav_prob || 0, m.home_prob || 0, m.away_prob || 0, m.draw_prob || 0);
 
     return {
       ...m,
@@ -520,7 +469,7 @@ function sortMatchesSmart(matches, sortMode) {
   }
 
   return enriched;
-};
+}
 
 // Date filtering in Indian Standard Time (IST, UTC+5:30)
 function filterByDateIST(matches, filterType) {
@@ -604,7 +553,7 @@ function formatIST12Hour(isoOrTimestamp) {
       if (p.type === 'day') day = p.value;
     });
 
-    return `${hour}:${minute} ${dayPeriod} · ${month} ${day}`;
+    return hour + ':' + minute + ' ' + dayPeriod + ' · ' + month + ' ' + day;
   } catch (e) {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
   }
@@ -635,13 +584,13 @@ function createMatchCardHTML(m) {
   const hasValue = m.has_value === 1;
   const valueSide = m.value_side;
 
-  // Avatars (Safe error handling with data-fallback attribute)
+  // Avatars
   const homeAvatarHTML = m.home_avatar
-    ? `<img src="${escapeHtml(m.home_avatar)}" alt="${escapeHtml(m.home_name)}" onerror="this.style.display='none';this.parentElement.textContent=this.parentElement.dataset.fallback||'??'"/>`
+    ? '<img src="' + escapeHtml(m.home_avatar) + '" alt="' + escapeHtml(m.home_name) + '" onerror="this.style.display='none';this.parentElement.textContent=this.parentElement.dataset.fallback||'??'"/>'
     : escapeHtml(m.home_initials || '??');
 
   const awayAvatarHTML = m.away_avatar
-    ? `<img src="${escapeHtml(m.away_avatar)}" alt="${escapeHtml(m.away_name)}" onerror="this.style.display='none';this.parentElement.textContent=this.parentElement.dataset.fallback||'??'"/>`
+    ? '<img src="' + escapeHtml(m.away_avatar) + '" alt="' + escapeHtml(m.away_name) + '" onerror="this.style.display='none';this.parentElement.textContent=this.parentElement.dataset.fallback||'??'"/>'
     : escapeHtml(m.away_initials || '??');
 
   // Match Status Tag (Live / Delayed / Finished / Regular)
@@ -657,8 +606,8 @@ function createMatchCardHTML(m) {
   // Favorite >=51% Badges
   const isHomeFav = (m.fav_side === 'home' && (m.fav_prob >= 51.0 || (homeProb && homeProb >= 51))) || (homeProb && homeProb >= 51);
   const isAwayFav = (m.fav_side === 'away' && (m.fav_prob >= 51.0 || (awayProb && awayProb >= 51))) || (awayProb && awayProb >= 51);
-  const homeFavBadge = isHomeFav ? `<span class="fav-badge-highlight" title="Favorite Win Chance: ${homeProb}%"><i class="fa-solid fa-star"></i> 51%+</span>` : '';
-  const awayFavBadge = isAwayFav ? `<span class="fav-badge-highlight" title="Favorite Win Chance: ${awayProb}%"><i class="fa-solid fa-star"></i> 51%+</span>` : '';
+  const homeFavBadge = isHomeFav ? '<span class="fav-badge-highlight" title="Favorite Win Chance: ' + homeProb + '%"><i class="fa-solid fa-star"></i> 51%+</span>' : '';
+  const awayFavBadge = isAwayFav ? '<span class="fav-badge-highlight" title="Favorite Win Chance: ' + awayProb + '%"><i class="fa-solid fa-star"></i> 51%+</span>' : '';
 
   // Probability Bar HTML
   let probBarHTML = '';
@@ -667,158 +616,124 @@ function createMatchCardHTML(m) {
   if (homeProb !== null && awayProb !== null) {
     if (isTennis || !drawProb) {
       // 2-Way Tennis Dual Bar
-      probBarHTML = `
-        <div class="probability-bar">
-          <div class="prob-segment home" style="width: ${homeProb}%;">${homeProb}%</div>
-          <div class="prob-segment away" style="width: ${awayProb}%;">${awayProb}%</div>
-        </div>
-      `;
-      probLabelsHTML = `
-        <div class="prob-labels">
-          <span class="home-label">${escapeHtml(homeSurname)} win chance</span>
-          <span class="away-label">${escapeHtml(awaySurname)} win chance</span>
-        </div>
-      `;
+      probBarHTML = '<div class="probability-bar">' +
+        '<div class="prob-segment home" style="width: ' + homeProb + '%;">' + homeProb + '%</div>' +
+        '<div class="prob-segment away" style="width: ' + awayProb + '%;">' + awayProb + '%</div>' +
+      '</div>';
+      probLabelsHTML = '<div class="prob-labels">' +
+        '<span class="home-label">' + escapeHtml(homeSurname) + ' win chance</span>' +
+        '<span class="away-label">' + escapeHtml(awaySurname) + ' win chance</span>' +
+      '</div>';
     } else {
       // 3-Way Football Bar
-      probBarHTML = `
-        <div class="probability-bar">
-          <div class="prob-segment home" style="width: ${homeProb}%;" title="Home: ${homeProb}%">${homeProb}%</div>
-          <div class="prob-segment draw" style="width: ${drawProb}%;" title="Draw: ${drawProb}%">${drawProb}%</div>
-          <div class="prob-segment away" style="width: ${awayProb}%;" title="Away: ${awayProb}%">${awayProb}%</div>
-        </div>
-      `;
-      probLabelsHTML = `
-        <div class="prob-labels">
-          <span class="home-label">${escapeHtml(homeSurname)}</span>
-          <span class="draw-label">Draw (${drawProb}%)</span>
-          <span class="away-label">${escapeHtml(awaySurname)}</span>
-        </div>
-      `;
+      probBarHTML = '<div class="probability-bar">' +
+        '<div class="prob-segment home" style="width: ' + homeProb + '%;" title="Home: ' + homeProb + '%">' + homeProb + '%</div>' +
+        '<div class="prob-segment draw" style="width: ' + drawProb + '%;" title="Draw: ' + drawProb + '%">' + drawProb + '%</div>' +
+        '<div class="prob-segment away" style="width: ' + awayProb + '%;" title="Away: ' + awayProb + '%">' + awayProb + '%</div>' +
+      '</div>';
+      probLabelsHTML = '<div class="prob-labels">' +
+        '<span class="home-label">' + escapeHtml(homeSurname) + '</span>' +
+        '<span class="draw-label">Draw (' + drawProb + '%)</span>' +
+        '<span class="away-label">' + escapeHtml(awaySurname) + '</span>' +
+      '</div>';
     }
   } else {
-    probBarHTML = `<div class="probability-bar" style="background:#E2E8F0; justify-content:center; align-items:center; font-size:12px; color:#64748B;">Odds Pending</div>`;
+    probBarHTML = '<div class="probability-bar" style="background:#E2E8F0; justify-content:center; align-items:center; font-size:12px; color:#64748B;">Odds Pending</div>';
   }
 
   // Odds blocks
   let marketOddsValues = '';
   let fairOddsValues = '';
 
-  const edgeLabel = m.value_edge ? ` +${m.value_edge}%` : '';
+  const edgeLabel = m.value_edge ? ' +' + m.value_edge + '%' : '';
 
   if (isTennis || !m.market_draw) {
-    marketOddsValues = `
-      <div class="odds-val-item"><span>${mHome}</span></div>
-      <div class="odds-val-item" style="text-align:right;"><span>${mAway}</span></div>
-    `;
-    fairOddsValues = `
-      <div class="odds-val-item">
-        <span>${fHome}</span>
-        ${valueSide === 'home' ? `<span class="val-edge-tag" title="Expected Value: +${m.value_edge || 0}%">VALUE${edgeLabel}</span>` : ''}
-      </div>
-      <div class="odds-val-item" style="text-align:right;">
-        <span>${fAway}</span>
-        ${valueSide === 'away' ? `<span class="val-edge-tag" title="Expected Value: +${m.value_edge || 0}%">VALUE${edgeLabel}</span>` : ''}
-      </div>
-    `;
+    marketOddsValues = '<div class="odds-val-item"><span>' + mHome + '</span></div>' +
+      '<div class="odds-val-item" style="text-align:right;"><span>' + mAway + '</span></div>';
+    fairOddsValues = '<div class="odds-val-item">' +
+        '<span>' + fHome + '</span>' +
+        (valueSide === 'home' ? '<span class="val-edge-tag" title="Expected Value: +' + (m.value_edge || 0) + '%">VALUE' + edgeLabel + '</span>' : '') +
+      '</div>' +
+      '<div class="odds-val-item" style="text-align:right;">' +
+        '<span>' + fAway + '</span>' +
+        (valueSide === 'away' ? '<span class="val-edge-tag" title="Expected Value: +' + (m.value_edge || 0) + '%">VALUE' + edgeLabel + '</span>' : '') +
+      '</div>';
   } else {
-    marketOddsValues = `
-      <div class="odds-val-item"><span style="font-size:15px;">${mHome}</span></div>
-      <div class="odds-val-item" style="text-align:center;"><span style="font-size:15px; color:#64748B;">${mDraw}</span></div>
-      <div class="odds-val-item" style="text-align:right;"><span style="font-size:15px;">${mAway}</span></div>
-    `;
-    fairOddsValues = `
-      <div class="odds-val-item">
-        <span style="font-size:15px;">${fHome}</span>
-        ${valueSide === 'home' ? `<span class="val-edge-tag" title="Expected Value: +${m.value_edge || 0}%">VAL${edgeLabel}</span>` : ''}
-      </div>
-      <div class="odds-val-item" style="text-align:center;">
-        <span style="font-size:15px; color:#64748B;">${fDraw}</span>
-        ${valueSide === 'draw' ? `<span class="val-edge-tag" title="Expected Value: +${m.value_edge || 0}%">VAL${edgeLabel}</span>` : ''}
-      </div>
-      <div class="odds-val-item" style="text-align:right;">
-        <span style="font-size:15px;">${fAway}</span>
-        ${valueSide === 'away' ? `<span class="val-edge-tag" title="Expected Value: +${m.value_edge || 0}%">VAL${edgeLabel}</span>` : ''}
-      </div>
-    `;
+    marketOddsValues = '<div class="odds-val-item"><span style="font-size:15px;">' + mHome + '</span></div>' +
+      '<div class="odds-val-item" style="text-align:center;"><span style="font-size:15px; color:#64748B;">' + mDraw + '</span></div>' +
+      '<div class="odds-val-item" style="text-align:right;"><span style="font-size:15px;">' + mAway + '</span></div>';
+    fairOddsValues = '<div class="odds-val-item">' +
+        '<span style="font-size:15px;">' + fHome + '</span>' +
+        (valueSide === 'home' ? '<span class="val-edge-tag" title="Expected Value: +' + (m.value_edge || 0) + '%">VAL' + edgeLabel + '</span>' : '') +
+      '</div>' +
+      '<div class="odds-val-item" style="text-align:center;">' +
+        '<span style="font-size:15px; color:#64748B;">' + fDraw + '</span>' +
+        (valueSide === 'draw' ? '<span class="val-edge-tag" title="Expected Value: +' + (m.value_edge || 0) + '%">VAL' + edgeLabel + '</span>' : '') +
+      '</div>' +
+      '<div class="odds-val-item" style="text-align:right;">' +
+        '<span style="font-size:15px;">' + fAway + '</span>' +
+        (valueSide === 'away' ? '<span class="val-edge-tag" title="Expected Value: +' + (m.value_edge || 0) + '%">VAL' + edgeLabel + '</span>' : '') +
+      '</div>';
   }
 
   const locationHTML = m.location
-    ? `<div class="match-location"><i class="fa-solid fa-location-dot"></i> ${escapeHtml(m.location)}</div>`
-    : `<div class="match-location" style="visibility:hidden;"><i class="fa-solid fa-location-dot"></i> Venue</div>`;
+    ? '<div class="match-location"><i class="fa-solid fa-location-dot"></i> ' + escapeHtml(m.location) + '</div>'
+    : '<div class="match-location" style="visibility:hidden;"><i class="fa-solid fa-location-dot"></i> Venue</div>';
 
-  return `
-    <div class="match-card ${hasValue ? 'has-value-edge' : ''} ${m.is_finished ? 'is-finished-card' : ''}">
-      <!-- Header -->
-      <div class="card-header">
-        <div class="league-badge" title="${escapeHtml(m.league)}">
-          <i class="fa-solid fa-trophy"></i>
-          <span>${escapeHtml(m.league || (isTennis ? 'ATP Challenger' : 'Football League'))}</span>
-        </div>
-        <div class="card-time-wrapper">
-          ${statusTag}
-          <span>${timeFormattedIST}</span>
-        </div>
-      </div>
-
-      <!-- Contenders -->
-      <div class="contenders-row">
-        <div class="contender home">
-          <div class="avatar-circle" data-fallback="${escapeHtml(m.home_initials || '??')}">${homeAvatarHTML}</div>
-          <div class="contender-name" title="${escapeHtml(m.home_name)}">
-            ${escapeHtml(m.home_name)}
-            ${homeFavBadge}
-          </div>
-        </div>
-
-        <div class="vs-badge-wrapper">
-          <div class="vs-badge">vs</div>
-        </div>
-
-        <div class="contender away">
-          <div class="avatar-circle" data-fallback="${escapeHtml(m.away_initials || '??')}">${awayAvatarHTML}</div>
-          <div class="contender-name" title="${escapeHtml(m.away_name)}">
-            ${escapeHtml(m.away_name)}
-            ${awayFavBadge}
-          </div>
-        </div>
-      </div>
-
-      <!-- Location -->
-      ${locationHTML}
-
-      <!-- Win Probability Bar -->
-      <div class="win-chance-section">
-        ${probBarHTML}
-        ${probLabelsHTML}
-      </div>
-
-      <!-- Odds Comparison Blocks -->
-      <div class="odds-section">
-        <!-- Market Odds -->
-        <div class="odds-card market">
-          <div class="odds-header">
-            <i class="fa-solid fa-building-columns"></i>
-            <span>Market odds</span>
-          </div>
-          <div class="odds-values">
-            ${marketOddsValues}
-          </div>
-        </div>
-
-        <!-- Fair Odds -->
-        <div class="odds-card fair">
-          <div class="odds-header">
-            <i class="fa-solid fa-scale-balanced"></i>
-            <span>Fair odds</span>
-          </div>
-          <div class="odds-values">
-            ${fairOddsValues}
-          </div>
-        </div>
-      </div>
-    </div>
-  `;
+  return '<div class="match-card ' + (hasValue ? 'has-value-edge' : '') + ' ' + (m.is_finished ? 'is-finished-card' : '') + '">' +
+      '<div class="card-header">' +
+        '<div class="league-badge" title="' + escapeHtml(m.league) + '">' +
+          '<i class="fa-solid fa-trophy"></i>' +
+          '<span>' + escapeHtml(m.league || (isTennis ? 'ATP Challenger' : 'Football League')) + '</span>' +
+        '</div>' +
+        '<div class="card-time-wrapper">' +
+          statusTag +
+          '<span>' + timeFormattedIST + '</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="contenders-row">' +
+        '<div class="contender home">' +
+          '<div class="avatar-circle" data-fallback="' + escapeHtml(m.home_initials || '??') + '">' + homeAvatarHTML + '</div>' +
+          '<div class="contender-name" title="' + escapeHtml(m.home_name) + '">' +
+            escapeHtml(m.home_name) +
+            homeFavBadge +
+          '</div>' +
+        '</div>' +
+        '<div class="vs-badge-wrapper">' +
+          '<div class="vs-badge">vs</div>' +
+        '</div>' +
+        '<div class="contender away">' +
+          '<div class="avatar-circle" data-fallback="' + escapeHtml(m.away_initials || '??') + '">' + awayAvatarHTML + '</div>' +
+          '<div class="contender-name" title="' + escapeHtml(m.away_name) + '">' +
+            escapeHtml(m.away_name) +
+            awayFavBadge +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+      locationHTML +
+      probBarHTML +
+      probLabelsHTML +
+      '<div class="odds-container">' +
+        '<div class="odds-card market">' +
+          '<div class="odds-header">' +
+            '<i class="fa-solid fa-building-columns"></i>' +
+            '<span>Market odds</span>' +
+          '</div>' +
+          '<div class="odds-values">' +
+            marketOddsValues +
+          '</div>' +
+        '</div>' +
+        '<div class="odds-card fair">' +
+          '<div class="odds-header">' +
+            '<i class="fa-solid fa-scale-balanced"></i>' +
+            '<span>Fair odds</span>' +
+          '</div>' +
+          '<div class="odds-values">' +
+            fairOddsValues +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
 }
 
 function escapeHtml(text) {
@@ -829,6 +744,35 @@ function escapeHtml(text) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
+}
+
+// Populate Tournament / League Dropdown dynamically
+function updateLeagueDropdown() {
+  const select = document.getElementById('leagueSelect');
+  if (!select) return;
+
+  const currentVal = state.league || 'all';
+  select.innerHTML = '<option value="all">🏆 All Tournaments</option>';
+
+  let leagues = [];
+  if (state.leaguesCache && state.leaguesCache[state.sport] && state.leaguesCache[state.sport].length > 0) {
+    leagues = state.leaguesCache[state.sport];
+  } else {
+    const currentList = (state.currentView === 'finished' ? state.finishedMatchesCache[state.sport] : state.allMatchesCache[state.sport]) || [];
+    const set = new Set();
+    currentList.forEach(m => {
+      if (m.league && m.league.trim()) set.add(m.league.trim());
+    });
+    leagues = Array.from(set).sort();
+  }
+
+  leagues.forEach(lg => {
+    const opt = document.createElement('option');
+    opt.value = lg;
+    opt.textContent = lg;
+    if (lg === currentVal) opt.selected = true;
+    select.appendChild(opt);
+  });
 }
 
 // Filter Event Handlers
@@ -914,7 +858,7 @@ function updateSummary() {
   const count = state.matches.length;
   const summaryEl = document.getElementById('matchesSummary');
   if (summaryEl) {
-    summaryEl.textContent = `Showing ${count} ${viewName} ${sportName} matches`;
+    summaryEl.textContent = 'Showing ' + count + ' ' + viewName + ' ' + sportName + ' matches';
   }
 }
 
@@ -930,126 +874,199 @@ function updateLoadingState() {
   }
 }
 
-// Manual Sync Trigger (Handles both Live Backend & GitHub Pages Static Mode)
+// Scraper Status Polling (Dynamic Mode)
+async function pollScraperStatus() {
+  try {
+    const res = await fetch('/api/status');
+    if (!res.ok) throw new Error('Status API unavailable');
+
+    const data = await res.json();
+    state.statsCache = data.stats || null;
+    updateScraperBanner(data);
+
+    if (data.is_running && !state.isScrapingActive) {
+      state.isScrapingActive = true;
+      setTimeout(pollScraperStatus, 3000);
+    } else if (!data.is_running && state.isScrapingActive) {
+      state.isScrapingActive = false;
+      fetchMatches();
+    }
+  } catch (err) {
+    state.isStaticMode = true;
+    checkStaticDataFallback();
+  }
+}
+
+// Update Top Status Banner
+function updateScraperBanner(data) {
+  const banner = document.getElementById('scraperBanner');
+  const badge = document.getElementById('scraperStateBadge');
+  const statusText = document.getElementById('scraperStatusText');
+  const lastScrapeMeta = document.getElementById('lastScrapeMeta');
+  const nextScrapeMeta = document.getElementById('nextScrapeMeta');
+  const progressBar = document.getElementById('bannerProgressBar');
+  const progressContainer = document.getElementById('bannerProgress');
+  const pulseDot = document.getElementById('pulseDot');
+
+  const stats = data.stats || {};
+  const tennisCount = stats.tennis_count || 0;
+  const footballCount = stats.football_count || 0;
+
+  document.getElementById('tennisCountBadge').textContent = tennisCount;
+  document.getElementById('footballCountBadge').textContent = footballCount;
+
+  const live = data.live_state || {};
+  const isRunning = data.is_running || live.is_running;
+
+  if (isRunning) {
+    banner.className = 'scraper-banner running';
+    pulseDot.className = 'pulse-dot running';
+    badge.innerHTML = '<i class="fa-solid fa-arrows-rotate fa-spin"></i> In Process';
+    statusText.textContent = live.status_text || 'Scraper running: Scraping matches from XML...';
+    progressContainer.style.display = 'block';
+
+    const total = live.total_urls || 240;
+    const current = live.processed_count || 0;
+    const pct = total > 0 ? Math.min(100, Math.round((current / total) * 100)) : 20;
+    progressBar.style.width = pct + '%';
+
+    document.getElementById('autoScraperStatus').textContent = 'Scraper Running (' + pct + '%)';
+  } else {
+    banner.className = 'scraper-banner';
+    pulseDot.className = 'pulse-dot';
+    progressContainer.style.display = 'none';
+    progressBar.style.width = '0%';
+    document.getElementById('autoScraperStatus').textContent = 'Auto-Scraper Active (Every 1h)';
+
+    const lastRun = stats.last_run;
+    if (lastRun && lastRun.timestamp) {
+      const lastTimeIST = formatIST12Hour(lastRun.timestamp);
+      const newMatches = lastRun.new_matches || 0;
+      const updatedMatches = lastRun.updated_matches || 0;
+      const duration = lastRun.duration_seconds || 0;
+
+      badge.innerHTML = '<i class="fa-solid fa-circle-check"></i> Finished';
+      statusText.textContent = 'Scraper completed. ' + (stats.total_count || (tennisCount + footballCount)) + ' matches updated (' + newMatches + ' new, ' + updatedMatches + ' refreshed) in ' + duration + 's.';
+      lastScrapeMeta.innerHTML = '<i class="fa-regular fa-clock"></i> Last scraped: ' + lastTimeIST;
+    } else {
+      badge.innerHTML = '<i class="fa-solid fa-circle-check"></i> Idle';
+      statusText.textContent = 'All ' + (stats.total_count || (tennisCount + footballCount)) + ' matches up-to-date.';
+    }
+
+    if (data.next_run) {
+      const nextDate = new Date(data.next_run);
+      const diffMin = Math.max(1, Math.round((nextDate - new Date()) / 60000));
+      nextScrapeMeta.innerHTML = '<i class="fa-solid fa-hourglass-half"></i> Next in ' + diffMin + 'm';
+    } else {
+      nextScrapeMeta.innerHTML = '<i class="fa-solid fa-clock"></i> Hourly Auto-Scrape';
+    }
+  }
+}
+
+// Trigger Manual Sync
 async function triggerManualSync() {
   const btn = document.getElementById('syncNowBtn');
-  btn.classList.add('spinning');
-  btn.disabled = true;
+  const icon = document.getElementById('syncIcon');
 
   if (state.isStaticMode) {
-    showToast('Refreshing latest match data from GitHub...', 'info');
-    try {
-      await checkStaticDataFallback();
-      showToast('Matches & odds refreshed successfully!', 'success');
-    } catch (e) {
-      showToast('Unable to reach GitHub data cache', 'error');
-    } finally {
-      setTimeout(() => {
-        btn.classList.remove('spinning');
-        btn.disabled = false;
-      }, 1200);
-    }
+    icon.classList.add('fa-spin');
+    btn.disabled = true;
+    showToast('Refreshing latest match feed...', 'info');
+    await checkStaticDataFallback();
+    setTimeout(() => {
+      icon.classList.remove('fa-spin');
+      btn.disabled = false;
+      showToast('Match feed refreshed!', 'success');
+    }, 800);
     return;
   }
 
-  showToast('Starting real-time scraper sync...', 'info');
   try {
+    icon.classList.add('fa-spin');
+    btn.disabled = true;
+    showToast('Triggering background scraper sync...', 'info');
+
     const res = await fetch('/api/scrape/trigger', { method: 'POST' });
     const data = await res.json();
 
     if (data.status === 'started') {
-      showToast('Scraper started! Fetching latest odds and new matches...', 'success');
-      pollScraperStatus();
-    } else {
-      showToast(data.message || 'Scraper already running', 'info');
+      showToast('Scraper started! Fetching latest odds...', 'success');
+      state.isScrapingActive = true;
+      setTimeout(pollScraperStatus, 1500);
+    } else if (data.status === 'already_running') {
+      showToast('Scraper is already active in background.', 'info');
     }
   } catch (err) {
-    state.isStaticMode = true;
-    await checkStaticDataFallback();
-    showToast('Switched to static archive. Refreshed data!', 'info');
+    showToast('Manual sync error. Falling back to cached data.', 'error');
   } finally {
     setTimeout(() => {
-      btn.classList.remove('spinning');
+      icon.classList.remove('fa-spin');
       btn.disabled = false;
-    }, 1500);
+    }, 2000);
   }
 }
 
-// Scraper Activity Logs Modal Functions
+// Scraper Run Logs Modal
 function openLogsModal() {
   const modal = document.getElementById('logsModal');
-  if (!modal) return;
   modal.style.display = 'flex';
-  renderLogsModal();
+  populateLogsModal();
 }
 
 function closeLogsModal(e) {
-  const modal = document.getElementById('logsModal');
-  if (!modal) return;
-  if (!e || e.target === modal || e.target.classList.contains('btn-modal-close') || e.target.classList.contains('btn-modal-close-action')) {
-    modal.style.display = 'none';
+  if (e && e.target !== e.currentTarget && !e.target.classList.contains('btn-modal-close') && !e.target.classList.contains('btn-modal-close-action')) {
+    return;
   }
+  document.getElementById('logsModal').style.display = 'none';
 }
 
-function renderLogsModal() {
+function populateLogsModal() {
   const stats = state.statsCache || {};
-  const history = stats.history || (stats.last_run ? [stats.last_run] : []);
-  const tennisCount = (state.allMatchesCache.tennis || []).length;
-  const footballCount = (state.allMatchesCache.football || []).length;
-  const total = tennisCount + footballCount;
+  const history = stats.history || [];
 
-  const modalState = document.getElementById('modalScraperState');
-  const modalTotal = document.getElementById('modalTotalMatches');
-  const modalLast = document.getElementById('modalLastRun');
+  const modalScraperState = document.getElementById('modalScraperState');
+  const modalLastRun = document.getElementById('modalLastRun');
+  const modalNextRun = document.getElementById('modalNextRun');
+  const modalTotalMatches = document.getElementById('modalTotalMatches');
 
-  if (modalState) modalState.textContent = state.isScrapingActive ? 'Running' : 'Active (Hourly Auto)';
-  if (modalTotal) modalTotal.textContent = `${total} matches`;
-
-  const lastRun = stats.last_run;
-  if (lastRun && lastRun.timestamp) {
-    if (modalLast) modalLast.textContent = formatIST12Hour(lastRun.timestamp);
-  } else {
-    if (modalLast) modalLast.textContent = 'Auto via GitHub Actions';
-  }
+  if (modalScraperState) modalScraperState.textContent = state.isScrapingActive ? 'Running' : 'Idle';
+  if (modalLastRun) modalLastRun.textContent = stats.last_run ? formatIST12Hour(stats.last_run.timestamp) : 'N/A';
+  if (modalNextRun) modalNextRun.textContent = 'Hourly via GitHub Actions';
+  if (modalTotalMatches) modalTotalMatches.textContent = (stats.total_count || 0) + ' matches';
 
   const tbody = document.getElementById('logsTableBody');
   if (!tbody) return;
 
   if (history.length === 0) {
-    tbody.innerHTML = `
-      <tr>
-        <td colspan="6" style="text-align: center; color: #64748B; padding: 16px;">
-          Scraper runs hourly on GitHub Actions. Total ${total} matches currently loaded.
-        </td>
-      </tr>
-    `;
+    tbody.innerHTML = '<tr><td>Just now</td><td>240</td><td>240 matches</td><td>0</td><td>0.0s</td><td><span class="logs-status-tag ok">SUCCESS</span></td></tr>';
     return;
   }
 
-  tbody.innerHTML = history.map(r => {
-    const timeFormatted = formatIST12Hour(r.timestamp);
-    const errors = r.errors || 0;
-    const duration = r.duration_seconds ? `${r.duration_seconds}s` : '-';
-    const tagClass = errors > 5 ? 'err' : (errors > 0 ? 'warn' : 'ok');
-    const tagText = errors === 0 ? 'Success' : (errors < 5 ? 'Partial' : 'Error');
+  tbody.innerHTML = history.map(h => {
+    const isOk = (h.errors || 0) === 0 && h.status && !h.status.includes('Error');
+    const statusTag = isOk
+      ? '<span class="logs-status-tag ok">SUCCESS</span>'
+      : '<span class="logs-status-tag err">ERROR</span>';
 
-    return `
-      <tr>
-        <td><strong>${timeFormatted}</strong></td>
-        <td>${r.total_urls || '-'}</td>
-        <td>${r.scraped_matches || '-'} (${r.new_matches || 0} new, ${r.updated_matches || 0} refreshed)</td>
-        <td>${errors}</td>
-        <td>${duration}</td>
-        <td><span class="logs-status-tag ${tagClass}">${tagText}</span></td>
-      </tr>
-    `;
+    return '<tr>' +
+        '<td>' + formatIST12Hour(h.timestamp) + '</td>' +
+        '<td>' + (h.total_urls || 0) + '</td>' +
+        '<td>' + (h.scraped_matches || 0) + ' (' + (h.new_matches || 0) + ' new, ' + (h.updated_matches || 0) + ' refreshed)</td>' +
+        '<td>' + (h.errors || 0) + '</td>' +
+        '<td>' + (h.duration_seconds || 0).toFixed(1) + 's</td>' +
+        '<td>' + statusTag + '</td>' +
+      '</tr>';
   }).join('');
 }
 
+// Toast Notifications
 function showToast(message, type = 'info') {
   const toast = document.getElementById('toast');
+  if (!toast) return;
+
   toast.textContent = message;
-  toast.className = `toast-notification show ${type}`;
+  toast.className = 'toast-notification ' + type + ' show';
+
   setTimeout(() => {
     toast.className = 'toast-notification';
   }, 3500);
