@@ -777,8 +777,10 @@ function updateLeagueDropdown() {
 
 // Filter Event Handlers
 function handleSearchInput() {
-  const val = document.getElementById('searchInput').value;
-  document.getElementById('clearSearchBtn').style.display = val ? 'block' : 'none';
+  const input = document.getElementById('searchInput');
+  const clearBtn = document.getElementById('clearSearchBtn');
+  const val = input ? input.value : '';
+  if (clearBtn) clearBtn.style.display = val ? 'block' : 'none';
 
   clearTimeout(state.searchDebounceTimer);
   state.searchDebounceTimer = setTimeout(() => {
@@ -788,8 +790,10 @@ function handleSearchInput() {
 }
 
 function clearSearch() {
-  document.getElementById('searchInput').value = '';
-  document.getElementById('clearSearchBtn').style.display = 'none';
+  const input = document.getElementById('searchInput');
+  const clearBtn = document.getElementById('clearSearchBtn');
+  if (input) input.value = '';
+  if (clearBtn) clearBtn.style.display = 'none';
   state.search = '';
   applyFilters();
 }
@@ -819,8 +823,10 @@ function applyFilters() {
 }
 
 function resetFilters() {
-  document.getElementById('searchInput').value = '';
-  document.getElementById('clearSearchBtn').style.display = 'none';
+  const input = document.getElementById('searchInput');
+  const clearBtn = document.getElementById('clearSearchBtn');
+  if (input) input.value = '';
+  if (clearBtn) clearBtn.style.display = 'none';
 
   const leagueSelect = document.getElementById('leagueSelect');
   const dateSelect = document.getElementById('dateSelect');

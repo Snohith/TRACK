@@ -144,26 +144,6 @@
       </div>
     </div>
 
-    <!-- Filters & Search Toolbar -->
-    <section class="toolbar-section">
-      <div class="toolbar-content">
-        <div class="search-wrapper">
-          <i class="fa-solid fa-magnifying-glass search-icon"></i>
-          <input 
-            type="text" 
-            id="searchInput" 
-            placeholder="Search player, team, tournament, venue..." 
-            oninput="handleSearchInput()" 
-          />
-          <button id="clearSearchBtn" class="btn-clear" onclick="clearSearch()" style="display: none;">
-            <i class="fa-solid fa-xmark"></i>
-          </button>
-        </div>
-
-        </div>
-      </div>
-    </section>
-
     <!-- Active Filter Summary & Result Count -->
     <div class="results-meta">
       <div class="meta-count" id="matchesSummary">Showing 0 matches sorted by start time</div>
@@ -255,6 +235,6 @@
   <div id="toast" class="toast-notification"></div>
 
   <!-- Scripts -->
-  <script src="app.js?v=7"></script>
+  <script src="app.js?v=8"></script>
 </body>
 </html>
