@@ -59,42 +59,51 @@ async function initApp() {
 async function autoRefreshData() {
   if (state.isStaticMode) {
     try {
-      const res = await fetch(`./data.json?_t=${Date.now()}`);
-      if (res.ok) {
+      let res;
+      try {
+        res = await fetch(`./data.json?_t=${Date.now()}`);
+        if (!res.ok) throw new Error();
+      } catch {
+        res = await fetch(`./static/data.json?_t=${Date.now()}`);
+      }
+
+      if (res && res.ok) {
         const staticData = await res.json();
         state.allMatchesCache = staticData.matches || { tennis: [], football: [] };
+        state.finishedMatchesCache = staticData.finished_matches || { tennis: [], football: [] };
+        state.valueMatchesCache = staticData.value_matches || { tennis: [], football: [] };
         state.leaguesCache = staticData.leagues || { tennis: [], football: [] };
         state.statsCache = staticData.stats || null;
 
-        const tennisCount = (state.allMatchesCache.tennis || []).length;
-        const footballCount = (state.allMatchesCache.football || []).length;
-        const badgeT = document.getElementById('tennisCountBadge');
-        const badgeF = document.getElementById('footballCountBadge');
-        if (badgeT) badgeT.textContent = tennisCount;
-        if (badgeF) badgeF.textContent = footballCount;
+        updateViewPillCounts();
 
         if (staticData.exported_at) {
           const lastMeta = document.getElementById('lastScrapeMeta');
           if (lastMeta) lastMeta.innerHTML = `<i class="fa-regular fa-clock"></i> Last scraped: ${formatIST12Hour(staticData.exported_at)}`;
         }
 
-        const currentList = state.allMatchesCache[state.sport] || [];
-        processAndRenderMatches(currentList);
+        refreshCurrentView();
       }
     } catch (e) {
       // silent background failure
     }
   } else {
     try {
+      const isFin = state.currentView === 'finished' ? 1 : 0;
       const params = new URLSearchParams({
         sport: state.sport,
+        is_finished: isFin.toString(),
         sort_order: 'asc',
         limit: '1000'
       });
       const res = await fetch(`/api/matches?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
-        state.allMatchesCache[state.sport] = data.matches || [];
+        if (state.currentView === 'finished') {
+          state.finishedMatchesCache[state.sport] = data.matches || [];
+        } else {
+          state.allMatchesCache[state.sport] = data.matches || [];
+        }
         processAndRenderMatches(data.matches || []);
       }
     } catch (e) {
@@ -171,7 +180,7 @@ function updateScraperBanner(data) {
     statusText.textContent = live.status_text || 'Scraper running: Scraping matches from XML...';
     progressContainer.style.display = 'block';
 
-    const total = live.total_urls || 239;
+    const total = live.total_urls || 240;
     const current = live.processed_count || 0;
     const pct = total > 0 ? Math.min(100, Math.round((current / total) * 100)) : 20;
     progressBar.style.width = `${pct}%`;
@@ -211,6 +220,10 @@ function updateScraperBanner(data) {
 
 // GitHub Pages Static Fallback Loader
 async function checkStaticDataFallback() {
+  state.isStaticMode = true;
+  state.isLoading = true;
+  updateLoadingState();
+
   try {
     let res;
     try {
@@ -223,28 +236,42 @@ async function checkStaticDataFallback() {
     if (res && res.ok) {
       const staticData = await res.json();
       state.allMatchesCache = staticData.matches || { tennis: [], football: [] };
+      state.finishedMatchesCache = staticData.finished_matches || { tennis: [], football: [] };
+      state.valueMatchesCache = staticData.value_matches || { tennis: [], football: [] };
       state.leaguesCache = staticData.leagues || { tennis: [], football: [] };
       state.statsCache = staticData.stats || null;
 
       const tennisCount = (state.allMatchesCache.tennis || []).length;
       const footballCount = (state.allMatchesCache.football || []).length;
-      document.getElementById('tennisCountBadge').textContent = tennisCount;
-      document.getElementById('footballCountBadge').textContent = footballCount;
+      const totalActive = tennisCount + footballCount;
+
+      const badgeT = document.getElementById('tennisCountBadge');
+      const badgeF = document.getElementById('footballCountBadge');
+      if (badgeT) badgeT.textContent = tennisCount;
+      if (badgeF) badgeF.textContent = footballCount;
+
+      updateViewPillCounts();
 
       const badge = document.getElementById('scraperStateBadge');
-      badge.innerHTML = '<i class="fa-solid fa-circle-check"></i> Auto-Synced Archive';
-      document.getElementById('scraperStatusText').textContent = `Loaded ${tennisCount + footballCount} matches. Scraper updates hourly via GitHub Actions.`;
+      if (badge) badge.innerHTML = '<i class="fa-solid fa-circle-check"></i> Auto-Synced Archive';
+      const statusText = document.getElementById('scraperStatusText');
+      if (statusText) statusText.textContent = `Loaded ${totalActive} active matches. Scraper updates hourly via GitHub Actions.`;
 
       if (staticData.exported_at) {
-        document.getElementById('lastScrapeMeta').innerHTML = `<i class="fa-regular fa-clock"></i> Last scraped: ${formatIST12Hour(staticData.exported_at)}`;
+        const lastMeta = document.getElementById('lastScrapeMeta');
+        if (lastMeta) lastMeta.innerHTML = `<i class="fa-regular fa-clock"></i> Last scraped: ${formatIST12Hour(staticData.exported_at)}`;
       }
-      document.getElementById('nextScrapeMeta').innerHTML = `<i class="fa-solid fa-clock"></i> Hourly Auto-Scrape`;
+      const nextMeta = document.getElementById('nextScrapeMeta');
+      if (nextMeta) nextMeta.innerHTML = `<i class="fa-solid fa-clock"></i> Hourly Auto-Scrape`;
 
       updateLeagueDropdown();
-      processAndRenderMatches(state.allMatchesCache[state.sport] || []);
+      refreshCurrentView();
     }
   } catch (e) {
     console.error('Static data load failed:', e);
+  } finally {
+    state.isLoading = false;
+    updateLoadingState();
   }
 }
 
