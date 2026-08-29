@@ -39,6 +39,11 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run Scraper & Export Data
+        env:
+          HTTP_PROXY: ""
+          HTTPS_PROXY: ""
+          http_proxy: ""
+          https_proxy: ""
         run: |
           python scraper.py
 
