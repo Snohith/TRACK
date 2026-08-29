@@ -64,6 +64,11 @@ async def get_leagues(sport: str = Query(..., description="tennis or football"))
 async def get_status():
     return scheduler.get_scheduler_status()
 
+@app.get("/api/health")
+async def health_check():
+    from datetime import datetime, timezone
+    return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
+
 @app.post("/api/scrape/trigger")
 async def trigger_scrape():
     return scheduler.trigger_manual_scrape()
