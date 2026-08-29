@@ -1158,6 +1158,43 @@ button, .tab-btn, .view-btn, .val-sort-btn, select {
     font-size: 9.5px;
   }
 
+  /* Finished Filter Bar on Mobile */
+  .finished-filter-container {
+    margin-bottom: 12px;
+  }
+
+  .finished-filter-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+    padding: 8px 10px;
+    border-radius: 10px;
+  }
+
+  .finished-filter-title {
+    font-size: 11.5px;
+  }
+
+  .finished-filter-options {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 4px;
+    width: 100%;
+  }
+
+  .fin-filter-btn {
+    font-size: 10px;
+    padding: 6px 2px;
+    justify-content: center;
+    text-align: center;
+    border-radius: 6px;
+    gap: 3px;
+  }
+
+  .fin-filter-btn i {
+    font-size: 9.5px;
+  }
+
   /* Analytics Grid on Mobile */
   .analytics-card {
     padding: 12px 14px;
@@ -1866,4 +1903,66 @@ button, .tab-btn, .view-btn, .val-sort-btn, select {
 .stat-value.text-danger {
   color: #DC2626;
 }
+
+/* ==========================================================================
+   Finished Matches Category Filter Bar (Desktop)
+   ========================================================================== */
+.finished-filter-container {
+  margin-bottom: 16px;
+  animation: fadeIn 0.2s ease;
+}
+
+.finished-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #FFFFFF;
+  padding: 8px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+.finished-filter-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.finished-filter-options {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.fin-filter-btn {
+  border: 1px solid #E2E8F0;
+  background: #F8FAFC;
+  color: #475569;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+}
+
+.fin-filter-btn:hover {
+  background: #F1F5F9;
+  border-color: #CBD5E1;
+}
+
+.fin-filter-btn.active {
+  background: #EEF2FF;
+  color: #4338CA;
+  border-color: #6366F1;
+  font-weight: 700;
+}
+
 

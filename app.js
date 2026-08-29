@@ -19,6 +19,7 @@ const isStaticHost = typeof window !== 'undefined' && (
 const state = {
   sport: 'tennis',
   currentView: 'active', // 'active' | 'value' | 'finished'
+  finishedCategory: 'fav51', // 'fav51' (>=51% Favs), 'under51' (<51% Leftovers), 'all' (All Matches)
   search: '',
   league: 'all',
   dateFilter: 'all',
@@ -168,11 +169,13 @@ function switchView(view) {
   if (btnFinished) btnFinished.classList.toggle('active', view === 'finished');
 
   const analyticsCard = document.getElementById('finishedAnalyticsCard');
+  const finishedFilterWrapper = document.getElementById('finishedFilterWrapper');
   const valueSortWrapper = document.getElementById('valueSortWrapper');
   const valToggleWrap = document.getElementById('valueToggleWrapper');
   const dateFilterWrap = document.getElementById('dateFilterWrapper');
 
   if (analyticsCard) analyticsCard.style.display = view === 'finished' ? 'block' : 'none';
+  if (finishedFilterWrapper) finishedFilterWrapper.style.display = view === 'finished' ? 'block' : 'none';
   if (valueSortWrapper) valueSortWrapper.style.display = view === 'value' ? 'block' : 'none';
   if (valToggleWrap) valToggleWrap.style.display = view === 'value' ? 'none' : 'flex';
   if (dateFilterWrap) dateFilterWrap.style.display = view === 'finished' ? 'none' : 'block';
@@ -182,6 +185,22 @@ function switchView(view) {
   }
 
   updateViewPillCounts();
+  refreshCurrentView();
+}
+
+// Finished Matches Category Switcher (Favorites ≥51% / Non-Favorites <51% / All Matches)
+function setFinishedCategory(cat) {
+  state.finishedCategory = cat;
+
+  const btnFav51 = document.getElementById('finFilterFav51');
+  const btnUnder51 = document.getElementById('finFilterUnder51');
+  const btnAll = document.getElementById('finFilterAll');
+
+  if (btnFav51) btnFav51.classList.toggle('active', cat === 'fav51');
+  if (btnUnder51) btnUnder51.classList.toggle('active', cat === 'under51');
+  if (btnAll) btnAll.classList.toggle('active', cat === 'all');
+
+  renderFinishedAnalytics();
   refreshCurrentView();
 }
 
@@ -339,21 +358,47 @@ function renderFinishedAnalytics() {
   const finFootball = state.finishedMatchesCache.football || [];
   const allFin = state.sport === 'tennis' ? finTennis : (state.sport === 'football' ? finFootball : [...finTennis, ...finFootball]);
 
-  const favMatches = allFin.filter(m => (m.fav_prob || 0) >= 51.0 || (m.home_prob >= 51 || m.away_prob >= 51));
+  const favMatches = allFin.filter(m => {
+    const topProb = Math.max(m.fav_prob || 0, m.home_prob || 0, m.away_prob || 0, m.draw_prob || 0);
+    return topProb >= 51.0;
+  });
 
-  let totalStaked = favMatches.length * 1.0;
+  const nonFavMatches = allFin.filter(m => {
+    const topProb = Math.max(m.fav_prob || 0, m.home_prob || 0, m.away_prob || 0, m.draw_prob || 0);
+    return topProb < 51.0;
+  });
+
+  let activeCategoryMatches = [];
+  let categoryBadgeText = '';
+  let subLabelText = '';
+
+  if (state.finishedCategory === 'fav51') {
+    activeCategoryMatches = favMatches;
+    categoryBadgeText = 'Strategy: Favorites (≥51%)';
+    subLabelText = 'Favorites (≥51%)';
+  } else if (state.finishedCategory === 'under51') {
+    activeCategoryMatches = nonFavMatches;
+    categoryBadgeText = 'Strategy: Non-Favorites (<51% Leftovers)';
+    subLabelText = 'Non-Favorites (<51%)';
+  } else {
+    activeCategoryMatches = allFin;
+    categoryBadgeText = 'Strategy: All Matches (No Filter)';
+    subLabelText = 'All Tracked Matches';
+  }
+
+  let totalStaked = activeCategoryMatches.length * 1.0;
   let totalReturned = 0.0;
   let wins = 0;
   let settledCount = 0;
 
-  favMatches.forEach(m => {
-    const favOdds = m.fav_odds || (m.home_prob >= 51 ? m.market_home : m.market_away) || 1.5;
+  activeCategoryMatches.forEach(m => {
+    const favOdds = m.fav_odds || (m.home_prob >= m.away_prob ? m.market_home : m.market_away) || 1.5;
     if (m.fav_won === 1) {
       totalReturned += favOdds;
       wins += 1;
       settledCount += 1;
     } else if (m.fav_won === 0) {
-      // Favorite lost: 0 return
+      // Pick lost: 0 return
       settledCount += 1;
     } else {
       // Unsettled / Pending
@@ -365,6 +410,8 @@ function renderFinishedAnalytics() {
   const roi = totalStaked > 0 ? (netProfit / totalStaked) * 100 : 0;
   const winRate = settledCount > 0 ? (wins / settledCount) * 100 : 0;
 
+  const elBadge = document.getElementById('analyticsStrategyBadge');
+  const elSubLabel = document.getElementById('roiSubLabel');
   const elTotalFin = document.getElementById('roiTotalFinished');
   const elTotalFavs = document.getElementById('roiTotalFavs');
   const elWinRate = document.getElementById('roiWinRate');
@@ -372,8 +419,10 @@ function renderFinishedAnalytics() {
   const elProfit = document.getElementById('roiNetProfit');
   const elRoi = document.getElementById('roiPercentage');
 
+  if (elBadge) elBadge.textContent = categoryBadgeText;
+  if (elSubLabel) elSubLabel.textContent = subLabelText;
   if (elTotalFin) elTotalFin.textContent = allFin.length;
-  if (elTotalFavs) elTotalFavs.textContent = favMatches.length;
+  if (elTotalFavs) elTotalFavs.textContent = activeCategoryMatches.length;
   if (elWinRate) {
     elWinRate.textContent = winRate.toFixed(1) + '%';
     elWinRate.className = 'stat-value ' + (winRate >= 50 ? 'text-emerald' : 'text-amber');
@@ -395,9 +444,21 @@ function renderFinishedAnalytics() {
 function processAndRenderMatches(rawList) {
   let list = [...rawList];
 
-  // View Filter
+  // View & Category Filter
   if (state.currentView === 'value') {
     list = list.filter(m => m.has_value === 1);
+  } else if (state.currentView === 'finished') {
+    if (state.finishedCategory === 'fav51') {
+      list = list.filter(m => {
+        const topProb = Math.max(m.fav_prob || 0, m.home_prob || 0, m.away_prob || 0, m.draw_prob || 0);
+        return topProb >= 51.0;
+      });
+    } else if (state.finishedCategory === 'under51') {
+      list = list.filter(m => {
+        const topProb = Math.max(m.fav_prob || 0, m.home_prob || 0, m.away_prob || 0, m.draw_prob || 0);
+        return topProb < 51.0;
+      });
+    }
   }
 
   // Favorites >=51% Only Filter
@@ -924,7 +985,8 @@ function updateSummary() {
     const sortDesc = state.valueSortOrder === 'desc' ? 'Highest Value' : (state.valueSortOrder === 'asc' ? 'Lowest Value' : 'Start Time');
     summaryEl.textContent = `Showing ${count} Value Bet ${sportName} matches (Sorted by ${sortDesc})`;
   } else if (state.currentView === 'finished') {
-    summaryEl.textContent = `Showing ${count} Finished ${sportName} matches`;
+    const catDesc = state.finishedCategory === 'fav51' ? 'Favorites ≥51%' : (state.finishedCategory === 'under51' ? 'Non-Favorites <51%' : 'All Matches');
+    summaryEl.textContent = `Showing ${count} Finished ${sportName} matches (${catDesc})`;
   } else {
     summaryEl.textContent = `Showing ${count} Live & Upcoming ${sportName} matches`;
   }

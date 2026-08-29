@@ -117,9 +117,9 @@
       <div class="analytics-header">
         <div class="analytics-title">
           <i class="fa-solid fa-chart-line text-brand"></i>
-          <span>Favorites & Value Bet Performance Tracker</span>
+          <span>Favorites & Strategy Performance Tracker</span>
         </div>
-        <span class="analytics-badge">Strategy: ≥51% Probability +EV</span>
+        <span class="analytics-badge" id="analyticsStrategyBadge">Strategy: Favorites (≥51%)</span>
       </div>
       <div class="analytics-grid">
         <div class="stat-box">
@@ -127,7 +127,7 @@
           <span class="stat-value" id="roiTotalFinished">0</span>
         </div>
         <div class="stat-box">
-          <span class="stat-label">Favorites (≥51%)</span>
+          <span class="stat-label" id="roiSubLabel">Favorites (≥51%)</span>
           <span class="stat-value" id="roiTotalFavs">0</span>
         </div>
         <div class="stat-box">
@@ -145,6 +145,27 @@
         <div class="stat-box highlight">
           <span class="stat-label">Realized ROI</span>
           <span class="stat-value text-emerald" id="roiPercentage">+0.0%</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Finished Matches Category Filter (Visible only in Finished view) -->
+    <div id="finishedFilterWrapper" class="finished-filter-container" style="display: none;">
+      <div class="finished-filter-bar">
+        <span class="finished-filter-title">
+          <i class="fa-solid fa-filter text-brand"></i>
+          <span>Category:</span>
+        </span>
+        <div class="finished-filter-options">
+          <button class="fin-filter-btn active" id="finFilterFav51" onclick="setFinishedCategory('fav51')">
+            <i class="fa-solid fa-star text-amber"></i> Favorites (≥51%)
+          </button>
+          <button class="fin-filter-btn" id="finFilterUnder51" onclick="setFinishedCategory('under51')">
+            <i class="fa-solid fa-scale-unbalanced"></i> Non-Favorites (&lt;51%)
+          </button>
+          <button class="fin-filter-btn" id="finFilterAll" onclick="setFinishedCategory('all')">
+            <i class="fa-solid fa-globe"></i> All Matches (No Filter)
+          </button>
         </div>
       </div>
     </div>
