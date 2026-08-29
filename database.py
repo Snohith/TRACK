@@ -66,7 +66,10 @@ def init_db():
             ("fav_ev", "REAL DEFAULT 0.0"),
             ("in_sitemap", "INTEGER DEFAULT 1"),
             ("is_finished", "INTEGER DEFAULT 0"),
-            ("finished_at", "TEXT")
+            ("finished_at", "TEXT"),
+            ("winner_side", "TEXT"),
+            ("final_score", "TEXT"),
+            ("fav_won", "INTEGER")
         ]
         for col_name, col_def in columns_to_add:
             try:
@@ -169,6 +172,9 @@ def upsert_match(match_data: Dict[str, Any]) -> bool:
             "in_sitemap": match_data.get("in_sitemap", 1),
             "is_finished": match_data.get("is_finished", 0),
             "finished_at": match_data.get("finished_at"),
+            "winner_side": match_data.get("winner_side"),
+            "final_score": match_data.get("final_score"),
+            "fav_won": match_data.get("fav_won"),
             "raw_json": match_data.get("raw_json", "{}"),
             "created_at": None if exists else now_iso,
             "updated_at": now_iso
@@ -185,6 +191,7 @@ def upsert_match(match_data: Dict[str, Any]) -> bool:
             has_value, value_side, value_edge,
             fav_side, fav_prob, fav_odds, fav_ev,
             in_sitemap, is_finished, finished_at,
+            winner_side, final_score, fav_won,
             raw_json, created_at, updated_at
         ) VALUES (
             :id, :url, :sport, :league, :location,
@@ -196,6 +203,7 @@ def upsert_match(match_data: Dict[str, Any]) -> bool:
             :has_value, :value_side, :value_edge,
             :fav_side, :fav_prob, :fav_odds, :fav_ev,
             :in_sitemap, :is_finished, :finished_at,
+            :winner_side, :final_score, :fav_won,
             :raw_json, :created_at, :updated_at
         )
         ON CONFLICT(id) DO UPDATE SET
@@ -229,6 +237,9 @@ def upsert_match(match_data: Dict[str, Any]) -> bool:
             fav_ev = excluded.fav_ev,
             in_sitemap = excluded.in_sitemap,
             is_finished = excluded.is_finished,
+            winner_side = COALESCE(excluded.winner_side, matches.winner_side),
+            final_score = COALESCE(excluded.final_score, matches.final_score),
+            fav_won = COALESCE(excluded.fav_won, matches.fav_won),
             raw_json = excluded.raw_json,
             updated_at = excluded.updated_at
         """, match_data_copy)
@@ -326,6 +337,9 @@ def upsert_matches_batch(matches_list: List[Dict[str, Any]]) -> tuple[int, int]:
                 "in_sitemap": match_data.get("in_sitemap", 1),
                 "is_finished": match_data.get("is_finished", 0),
                 "finished_at": match_data.get("finished_at"),
+                "winner_side": match_data.get("winner_side"),
+                "final_score": match_data.get("final_score"),
+                "fav_won": match_data.get("fav_won"),
                 "raw_json": match_data.get("raw_json", "{}"),
                 "created_at": None if exists else now_iso,
                 "updated_at": now_iso
@@ -342,6 +356,7 @@ def upsert_matches_batch(matches_list: List[Dict[str, Any]]) -> tuple[int, int]:
             has_value, value_side, value_edge,
             fav_side, fav_prob, fav_odds, fav_ev,
             in_sitemap, is_finished, finished_at,
+            winner_side, final_score, fav_won,
             raw_json, created_at, updated_at
         ) VALUES (
             :id, :url, :sport, :league, :location,
@@ -353,6 +368,7 @@ def upsert_matches_batch(matches_list: List[Dict[str, Any]]) -> tuple[int, int]:
             :has_value, :value_side, :value_edge,
             :fav_side, :fav_prob, :fav_odds, :fav_ev,
             :in_sitemap, :is_finished, :finished_at,
+            :winner_side, :final_score, :fav_won,
             :raw_json, :created_at, :updated_at
         )
         ON CONFLICT(id) DO UPDATE SET
@@ -386,6 +402,9 @@ def upsert_matches_batch(matches_list: List[Dict[str, Any]]) -> tuple[int, int]:
             fav_ev = excluded.fav_ev,
             in_sitemap = excluded.in_sitemap,
             is_finished = excluded.is_finished,
+            winner_side = COALESCE(excluded.winner_side, matches.winner_side),
+            final_score = COALESCE(excluded.final_score, matches.final_score),
+            fav_won = COALESCE(excluded.fav_won, matches.fav_won),
             raw_json = excluded.raw_json,
             updated_at = excluded.updated_at
         """, prepared_batch)

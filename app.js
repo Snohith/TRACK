@@ -344,16 +344,26 @@ function renderFinishedAnalytics() {
   let totalStaked = favMatches.length * 1.0;
   let totalReturned = 0.0;
   let wins = 0;
+  let settledCount = 0;
 
   favMatches.forEach(m => {
     const favOdds = m.fav_odds || (m.home_prob >= 51 ? m.market_home : m.market_away) || 1.5;
-    totalReturned += favOdds;
-    wins += 1;
+    if (m.fav_won === 1) {
+      totalReturned += favOdds;
+      wins += 1;
+      settledCount += 1;
+    } else if (m.fav_won === 0) {
+      // Favorite lost: 0 return
+      settledCount += 1;
+    } else {
+      // Unsettled / Pending
+      totalReturned += 1.0;
+    }
   });
 
   const netProfit = totalReturned - totalStaked;
   const roi = totalStaked > 0 ? (netProfit / totalStaked) * 100 : 0;
-  const winRate = favMatches.length > 0 ? (wins / favMatches.length) * 100 : 0;
+  const winRate = settledCount > 0 ? (wins / settledCount) * 100 : 0;
 
   const elTotalFin = document.getElementById('roiTotalFinished');
   const elTotalFavs = document.getElementById('roiTotalFavs');
@@ -364,10 +374,21 @@ function renderFinishedAnalytics() {
 
   if (elTotalFin) elTotalFin.textContent = allFin.length;
   if (elTotalFavs) elTotalFavs.textContent = favMatches.length;
-  if (elWinRate) elWinRate.textContent = winRate.toFixed(1) + '%';
+  if (elWinRate) {
+    elWinRate.textContent = winRate.toFixed(1) + '%';
+    elWinRate.className = 'stat-value ' + (winRate >= 50 ? 'text-emerald' : 'text-amber');
+  }
   if (elStaked) elStaked.textContent = totalStaked.toFixed(2) + 'u';
-  if (elProfit) elProfit.textContent = '+' + netProfit.toFixed(2) + 'u';
-  if (elRoi) elRoi.textContent = '+' + roi.toFixed(1) + '%';
+  if (elProfit) {
+    const sign = netProfit >= 0 ? '+' : '';
+    elProfit.textContent = sign + netProfit.toFixed(2) + 'u';
+    elProfit.className = 'stat-value ' + (netProfit >= 0 ? 'text-emerald' : 'text-danger');
+  }
+  if (elRoi) {
+    const sign = roi >= 0 ? '+' : '';
+    elRoi.textContent = sign + roi.toFixed(1) + '%';
+    elRoi.className = 'stat-value ' + (roi >= 0 ? 'text-emerald' : 'text-danger');
+  }
 }
 
 // Filter, Sort, and Render Pipeline
@@ -624,7 +645,14 @@ function createMatchCardHTML(m) {
   // Match Status Tag (Live / Delayed / Finished / Regular)
   let statusTag = '';
   if (m.is_finished === 1 || m._status === 'finished') {
-    statusTag = '<span class="finished-tag">FINISHED</span>';
+    let outcomeHTML = '';
+    if (m.fav_won === 1) {
+      outcomeHTML = ' <span class="outcome-badge win"><i class="fa-solid fa-check"></i> FAV WON</span>';
+    } else if (m.fav_won === 0) {
+      outcomeHTML = ' <span class="outcome-badge loss"><i class="fa-solid fa-xmark"></i> FAV LOST</span>';
+    }
+    const scoreHTML = m.final_score ? ` <span class="final-score-pill">${escapeHtml(m.final_score)}</span>` : '';
+    statusTag = '<span class="finished-tag">FINISHED</span>' + scoreHTML + outcomeHTML;
   } else if (m._status === 'live') {
     statusTag = '<span class="live-tag">LIVE</span>';
   } else if (m._isDelayed) {
