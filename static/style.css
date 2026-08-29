@@ -1927,12 +1927,12 @@ button, .tab-btn, .view-btn, .val-sort-btn, select {
 .finished-filter-bar {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 16px;
   background: #FFFFFF;
-  padding: 8px 14px;
-  border-radius: 12px;
+  padding: 10px 16px;
+  border-radius: 14px;
   border: 1px solid var(--border-color);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
   flex-wrap: wrap;
 }
 
@@ -1945,7 +1945,7 @@ button, .tab-btn, .view-btn, .val-sort-btn, select {
 
 .filter-divider {
   width: 1px;
-  height: 24px;
+  height: 26px;
   background: #E2E8F0;
 }
 
@@ -1956,39 +1956,44 @@ button, .tab-btn, .view-btn, .val-sort-btn, select {
   font-size: 12.5px;
   font-weight: 700;
   color: var(--text-secondary);
+  white-space: nowrap;
 }
 
 .finished-filter-options, .finished-date-options {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
+  align-items: center;
 }
 
-.fin-filter-btn, .fin-date-btn {
+.fin-pill-btn, .fin-filter-btn, .fin-date-btn {
   border: 1px solid #E2E8F0;
   background: #F8FAFC;
   color: #475569;
-  padding: 5px 12px;
+  padding: 6px 12px;
   border-radius: 8px;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   transition: all 0.15s ease;
+  white-space: nowrap;
 }
 
-.fin-filter-btn:hover, .fin-date-btn:hover {
+.fin-pill-btn:hover, .fin-filter-btn:hover, .fin-date-btn:hover {
   background: #F1F5F9;
   border-color: #CBD5E1;
+  color: var(--text-primary);
 }
 
-.fin-filter-btn.active, .fin-date-btn.active {
-  background: #EEF2FF;
-  color: #4338CA;
-  border-color: #6366F1;
-  font-weight: 700;
+.fin-pill-btn.active, .fin-filter-btn.active, .fin-date-btn.active {
+  background: #EEF2FF !important;
+  color: #4338CA !important;
+  border-color: #6366F1 !important;
+  font-weight: 700 !important;
+  box-shadow: 0 1px 3px rgba(99, 102, 241, 0.15);
 }
 
 

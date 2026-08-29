@@ -208,16 +208,7 @@ function setFinishedCategory(cat) {
 // Finished Matches Single-Date Switcher (e.g. 'all', 'Aug 29', 'Aug 30')
 function setFinishedDate(dateStr) {
   state.finishedDateFilter = dateStr;
-
-  const container = document.getElementById('finishedDateOptions');
-  if (container) {
-    const btns = container.querySelectorAll('.fin-date-btn');
-    btns.forEach(b => {
-      const bDate = b.textContent.trim();
-      b.classList.toggle('active', (dateStr === 'all' && bDate === 'All Dates') || bDate === dateStr);
-    });
-  }
-
+  updateFinishedDateDropdown();
   renderFinishedAnalytics();
   refreshCurrentView();
 }
@@ -236,10 +227,10 @@ function updateFinishedDateDropdown() {
 
   const dates = Array.from(dateSet).sort((a, b) => b.localeCompare(a));
 
-  let html = `<button class="fin-date-btn ${state.finishedDateFilter === 'all' ? 'active' : ''}" onclick="setFinishedDate('all')">All Dates</button>`;
+  let html = `<button class="fin-pill-btn fin-date-btn ${state.finishedDateFilter === 'all' ? 'active' : ''}" onclick="setFinishedDate('all')"><i class="fa-solid fa-calendar-days"></i> All Dates</button>`;
   dates.forEach(d => {
     const isActive = state.finishedDateFilter === d ? 'active' : '';
-    html += `<button class="fin-date-btn ${isActive}" onclick="setFinishedDate('${d}')">${d}</button>`;
+    html += `<button class="fin-pill-btn fin-date-btn ${isActive}" onclick="setFinishedDate('${d}')"><i class="fa-regular fa-calendar"></i> ${d}</button>`;
   });
 
   container.innerHTML = html;
@@ -342,6 +333,7 @@ function refreshCurrentView() {
     sourceList = (state.allMatchesCache[state.sport] || []).filter(m => m.has_value === 1);
   } else if (state.currentView === 'finished') {
     sourceList = state.finishedMatchesCache[state.sport] || [];
+    updateFinishedDateDropdown();
     renderFinishedAnalytics();
   }
   updateLeagueDropdown();
