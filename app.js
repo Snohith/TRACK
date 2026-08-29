@@ -20,6 +20,13 @@ const state = {
   sport: 'tennis',
   currentView: 'active', // 'active' | 'value' | 'finished'
   finishedCategory: 'fav51', // 'fav51' (>=51% Favs), 'under51' (<51% Leftovers), 'all' (All Matches)
+  finishedDateRange: {
+    start: null, // 'YYYY-MM-DD'
+    end: null,   // 'YYYY-MM-DD'
+    isPickingEnd: false
+  },
+  calViewYear: 2026,
+  calViewMonth: 7, // 0-indexed (7 = August)
   search: '',
   league: 'all',
   dateFilter: 'all',
@@ -245,6 +252,7 @@ function formatDateKeyToShort(dateKey) {
 
 // Check if a match falls inside the selected Finished Date Range
 function isMatchInFinishedRange(match) {
+  if (!state.finishedDateRange) return true;
   const { start, end } = state.finishedDateRange;
   if (!start && !end) return true;
   const matchKey = getMatchISTDateKey(match.start_timestamp);
@@ -256,10 +264,17 @@ function isMatchInFinishedRange(match) {
 
 // Toggle Calendar Popover Dropdown
 function toggleCalendarDropdown(e) {
-  if (e) e.stopPropagation();
+  if (e) {
+    if (typeof e.preventDefault === 'function') e.preventDefault();
+    if (typeof e.stopPropagation === 'function') e.stopPropagation();
+  }
   const dropdown = document.getElementById('calendarDropdown');
   const btn = document.getElementById('finDateRangeBtn');
   if (!dropdown) return;
+
+  if (!state.finishedDateRange) {
+    state.finishedDateRange = { start: null, end: null, isPickingEnd: false };
+  }
 
   const isHidden = dropdown.style.display === 'none' || !dropdown.style.display;
   if (isHidden) {
@@ -267,6 +282,9 @@ function toggleCalendarDropdown(e) {
       const parts = state.finishedDateRange.start.split('-');
       state.calViewYear = parseInt(parts[0]);
       state.calViewMonth = parseInt(parts[1]) - 1;
+    } else {
+      state.calViewYear = 2026;
+      state.calViewMonth = 7;
     }
     renderCalendarGrid();
     dropdown.style.display = 'block';
@@ -279,7 +297,7 @@ function toggleCalendarDropdown(e) {
 
 // Close Calendar Popover
 function closeCalendarDropdown(e) {
-  if (e) e.stopPropagation();
+  if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
   const dropdown = document.getElementById('calendarDropdown');
   const btn = document.getElementById('finDateRangeBtn');
   if (dropdown) dropdown.style.display = 'none';
@@ -289,10 +307,10 @@ function closeCalendarDropdown(e) {
 // Previous Month Navigation
 function prevCalMonth(e) {
   if (e) e.stopPropagation();
-  state.calViewMonth -= 1;
+  state.calViewMonth = (state.calViewMonth || 7) - 1;
   if (state.calViewMonth < 0) {
     state.calViewMonth = 11;
-    state.calViewYear -= 1;
+    state.calViewYear = (state.calViewYear || 2026) - 1;
   }
   renderCalendarGrid();
 }
@@ -300,10 +318,10 @@ function prevCalMonth(e) {
 // Next Month Navigation
 function nextCalMonth(e) {
   if (e) e.stopPropagation();
-  state.calViewMonth += 1;
+  state.calViewMonth = (state.calViewMonth || 7) + 1;
   if (state.calViewMonth > 11) {
     state.calViewMonth = 0;
-    state.calViewYear += 1;
+    state.calViewYear = (state.calViewYear || 2026) + 1;
   }
   renderCalendarGrid();
 }
@@ -314,6 +332,12 @@ function renderCalendarGrid() {
     'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December'
   ];
+
+  if (typeof state.calViewYear !== 'number') state.calViewYear = 2026;
+  if (typeof state.calViewMonth !== 'number') state.calViewMonth = 7;
+  if (!state.finishedDateRange) {
+    state.finishedDateRange = { start: null, end: null, isPickingEnd: false };
+  }
   
   const titleEl = document.getElementById('calMonthTitle');
   const gridEl = document.getElementById('calDaysGrid');
@@ -381,7 +405,14 @@ function renderCalendarGrid() {
 
 // Handle Day Click for 2-Click Range Selection
 function handleCalendarDayClick(dateKey, e) {
-  if (e) e.stopPropagation();
+  if (e) {
+    if (typeof e.preventDefault === 'function') e.preventDefault();
+    if (typeof e.stopPropagation === 'function') e.stopPropagation();
+  }
+
+  if (!state.finishedDateRange) {
+    state.finishedDateRange = { start: null, end: null, isPickingEnd: false };
+  }
 
   if (!state.finishedDateRange.isPickingEnd) {
     // 1st Click: Select Start Date
@@ -414,10 +445,11 @@ function handleCalendarDayClick(dateKey, e) {
 
 // Reset Date Range Filter (All Dates)
 function resetDateRange(e) {
-  if (e) e.stopPropagation();
-  state.finishedDateRange.start = null;
-  state.finishedDateRange.end = null;
-  state.finishedDateRange.isPickingEnd = false;
+  if (e) {
+    if (typeof e.preventDefault === 'function') e.preventDefault();
+    if (typeof e.stopPropagation === 'function') e.stopPropagation();
+  }
+  state.finishedDateRange = { start: null, end: null, isPickingEnd: false };
 
   updateDateRangeButtonUI();
   renderCalendarGrid();
@@ -430,6 +462,9 @@ function resetDateRange(e) {
 function updateDateRangeButtonUI() {
   const btn = document.getElementById('finDateRangeBtn');
   const textEl = document.getElementById('dateRangeBtnText');
+  if (!state.finishedDateRange) {
+    state.finishedDateRange = { start: null, end: null, isPickingEnd: false };
+  }
   const { start, end } = state.finishedDateRange;
 
   if (!start && !end) {
