@@ -443,6 +443,14 @@ async def run_scraper_pipeline() -> Dict[str, Any]:
         "status": status_msg
     })
 
+    # Auto-resolve and archive concluded matches past kickoff
+    try:
+        resolved_count = auto_resolve_concluded_matches()
+        if resolved_count > 0:
+            logger.info(f"Auto-resolved {resolved_count} concluded matches with official full-time scorelines.")
+    except Exception as e:
+        logger.warning(f"Auto-resolver note: {e}")
+
     # Export static data.json for GitHub hosting
     try:
         export_static_json()
@@ -470,6 +478,117 @@ async def run_scraper_pipeline() -> Dict[str, Any]:
         "errors": errors_count,
         "duration_seconds": duration
     }
+
+
+def clean_team_name(s: str) -> str:
+    if not s:
+        return ""
+    import unicodedata
+    n = unicodedata.normalize("NFKD", s).encode("ASCII", "ignore").decode("utf-8").lower()
+    for drop in ["fc", "fk", "sc", "cf", "rc", "de", "la", "le", "afc", "sk"]:
+        n = " " + n + " "
+        n = n.replace(f" {drop} ", " ")
+    return n.strip()
+
+
+def auto_resolve_concluded_matches() -> int:
+    """
+    Automatically resolve and archive concluded matches:
+    - Scans active matches (is_finished=0) where kickoff was >= 105 minutes ago
+    - Queries official scoreboard APIs (ESPN soccer scoreboard across major leagues)
+    - Updates final_score, winner_side, fav_won, and marks is_finished=1
+    """
+    try:
+        now_ts = int(time.time())
+        conn = database.get_connection()
+
+        # Matches kicked off > 105 minutes ago
+        cutoff_ts = now_ts - (105 * 60)
+        unsettled_football = conn.execute("""
+            SELECT id, home_name, away_name, league, start_time, start_timestamp, fav_side, fav_prob, home_prob, away_prob, draw_prob
+            FROM matches 
+            WHERE is_finished = 0 AND sport = 'football' AND start_timestamp <= ?
+        """, (cutoff_ts,)).fetchall()
+
+        if not unsettled_football:
+            return 0
+
+        # Fetch scoreboards from major European soccer leagues
+        leagues = ["eng.1", "eng.2", "esp.1", "ita.1", "ger.1", "fra.1", "ned.1", "por.1", "bel.1", "tur.1"]
+        events_map = []
+
+        session = requests.Session()
+        session.trust_env = False
+
+        for code in leagues:
+            try:
+                url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{code}/scoreboard"
+                r = session.get(url, timeout=6)
+                if r.status_code == 200:
+                    for ev in r.json().get("events", []):
+                        comp = ev.get("competitions", [{}])[0]
+                        status = comp.get("status", {}).get("type", {}).get("name")
+                        if status in ["STATUS_FULL_TIME", "STATUS_FINAL"]:
+                            competitors = comp.get("competitors", [])
+                            if len(competitors) == 2:
+                                home_c = next((c for c in competitors if c.get("homeAway") == "home"), competitors[0])
+                                away_c = next((c for c in competitors if c.get("homeAway") == "away"), competitors[1])
+                                h_name = clean_team_name(home_c.get("team", {}).get("displayName", ""))
+                                a_name = clean_team_name(away_c.get("team", {}).get("displayName", ""))
+                                h_score = int(home_c.get("score", 0))
+                                a_score = int(away_c.get("score", 0))
+                                events_map.append({
+                                    "home": h_name,
+                                    "away": a_name,
+                                    "home_score": h_score,
+                                    "away_score": a_score,
+                                })
+            except Exception:
+                pass
+
+        resolved_count = 0
+        with database.get_connection() as write_conn:
+            for match in unsettled_football:
+                m_home = clean_team_name(match["home_name"])
+                m_away = clean_team_name(match["away_name"])
+
+                found_ev = None
+                for ev in events_map:
+                    h_words = [w for w in m_home.replace("-", " ").split() if len(w) > 2]
+                    a_words = [w for w in m_away.replace("-", " ").split() if len(w) > 2]
+                    home_match = any(w in ev["home"] for w in h_words) or (m_home in ev["home"] or ev["home"] in m_home)
+                    away_match = any(w in ev["away"] for w in a_words) or (m_away in ev["away"] or ev["away"] in m_away)
+                    if home_match and away_match:
+                        found_ev = ev
+                        break
+
+                if found_ev:
+                    h_score = found_ev["home_score"]
+                    a_score = found_ev["away_score"]
+                    final_score = f"{h_score} - {a_score}"
+                    if h_score > a_score:
+                        winner_side = "home"
+                    elif a_score > h_score:
+                        winner_side = "away"
+                    else:
+                        winner_side = "draw"
+
+                    fav_side = match["fav_side"]
+                    fav_won = 1 if fav_side == winner_side else 0
+
+                    write_conn.execute("""
+                        UPDATE matches 
+                        SET is_finished = 1, final_score = ?, winner_side = ?, fav_won = ?, finished_at = ?
+                        WHERE id = ?
+                    """, (final_score, winner_side, fav_won, datetime.now(timezone.utc).isoformat(), match["id"]))
+                    resolved_count += 1
+                    logger.info(f"[Auto-Resolver] Concluded: {match['home_name']} vs {match['away_name']} -> {final_score} (Winner: {winner_side}, Fav Won: {fav_won})")
+
+            write_conn.commit()
+        return resolved_count
+    except Exception as e:
+        logger.warning(f"Error in auto_resolve_concluded_matches: {e}")
+        return 0
 
 
 def export_static_json():
