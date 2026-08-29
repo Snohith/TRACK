@@ -19,7 +19,7 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
   
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
-  <link rel="stylesheet" href="style.css?v=7">
+  <link rel="stylesheet" href="style.css?v=8">
 </head>
 <body>
 
@@ -177,17 +177,36 @@
             <i class="fa-solid fa-calendar-day text-brand"></i>
             <span>Date (IST):</span>
           </span>
-          <div class="finished-date-options" id="finishedDateOptions">
-            <button class="fin-pill-btn fin-date-btn active" id="finDateAll" onclick="setFinishedDate('all')">
-              <i class="fa-solid fa-calendar-days"></i> All Dates
+          <div class="calendar-range-container" id="calendarRangeContainer">
+            <button class="fin-date-range-btn" id="finDateRangeBtn" onclick="toggleCalendarDropdown(event)">
+              <i class="fa-regular fa-calendar-days text-brand"></i>
+              <span id="dateRangeBtnText">All Dates</span>
+              <i class="fa-solid fa-chevron-down text-muted chevron-icon"></i>
             </button>
-            <div class="calendar-picker-wrapper">
-              <button class="fin-pill-btn calendar-btn" id="finCalendarBtn" onclick="openCalendarPicker()">
-                <i class="fa-regular fa-calendar-plus text-brand"></i>
-                <span id="calendarBtnText">Select Date</span>
-                <i class="fa-solid fa-chevron-down text-muted" style="font-size: 9px; margin-left: 2px;"></i>
-              </button>
-              <input type="date" id="finishedCustomDatePicker" class="hidden-date-input" onchange="handleCustomDateSelect(this.value)" />
+            
+            <!-- Custom Interactive Calendar Range Picker Dropdown -->
+            <div class="calendar-dropdown" id="calendarDropdown" style="display: none;" onclick="event.stopPropagation()">
+              <div class="cal-header">
+                <button type="button" class="cal-nav-btn" onclick="prevCalMonth(event)"><i class="fa-solid fa-chevron-left"></i></button>
+                <span class="cal-month-title" id="calMonthTitle">August 2026</span>
+                <button type="button" class="cal-nav-btn" onclick="nextCalMonth(event)"><i class="fa-solid fa-chevron-right"></i></button>
+              </div>
+
+              <div class="cal-weekdays">
+                <span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span>
+              </div>
+
+              <div class="cal-days-grid" id="calDaysGrid">
+                <!-- Dynamically generated date cells -->
+              </div>
+
+              <div class="cal-footer">
+                <span class="cal-hint" id="calHintText">Click 1st date for start, 2nd for end</span>
+                <div class="cal-actions">
+                  <button type="button" class="cal-btn-reset" onclick="resetDateRange(event)">All Dates</button>
+                  <button type="button" class="cal-btn-apply" onclick="closeCalendarDropdown(event)">Apply</button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -306,6 +325,6 @@
   <div id="toast" class="toast-notification"></div>
 
   <!-- Scripts -->
-  <script src="app.js?v=14"></script>
+  <script src="app.js?v=15"></script>
 </body>
 </html>

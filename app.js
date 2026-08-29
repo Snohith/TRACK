@@ -181,7 +181,8 @@ function switchView(view) {
   if (dateFilterWrap) dateFilterWrap.style.display = view === 'finished' ? 'none' : 'block';
 
   if (view === 'finished') {
-    updateFinishedDateDropdown();
+    renderCalendarGrid();
+    updateDateRangeButtonUI();
     renderFinishedAnalytics();
   }
 
@@ -205,83 +206,242 @@ function setFinishedCategory(cat) {
   refreshCurrentView();
 }
 
-// Open native/browser calendar picker
-function openCalendarPicker() {
-  const input = document.getElementById('finishedCustomDatePicker');
-  if (!input) return;
+// Extract IST Date string formatted as 'YYYY-MM-DD' (e.g. '2026-08-29')
+function getMatchISTDateKey(isoOrTimestamp) {
+  if (!isoOrTimestamp) return null;
+  const date = typeof isoOrTimestamp === 'number' 
+    ? (isoOrTimestamp > 1e11 ? new Date(isoOrTimestamp) : new Date(isoOrTimestamp * 1000)) 
+    : new Date(isoOrTimestamp);
+  if (isNaN(date.getTime())) return null;
+
   try {
-    if (typeof input.showPicker === 'function') {
-      input.showPicker();
-    } else {
-      input.focus();
-      input.click();
-    }
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).formatToParts(date);
+    
+    let y = '', m = '', d = '';
+    parts.forEach(p => {
+      if (p.type === 'year') y = p.value;
+      if (p.type === 'month') m = p.value;
+      if (p.type === 'day') d = p.value;
+    });
+    return `${y}-${m}-${d}`;
   } catch (e) {
-    input.focus();
-    input.click();
+    return null;
   }
 }
 
-// Convert YYYY-MM-DD from calendar picker into match IST format (e.g. 'Aug 29')
-function parseISODateToFormatted(isoDateStr) {
-  if (!isoDateStr) return 'all';
-  const parts = isoDateStr.split('-');
-  if (parts.length !== 3) return 'all';
+// Format YYYY-MM-DD into human-readable short date (e.g. 'Aug 29')
+function formatDateKeyToShort(dateKey) {
+  if (!dateKey) return '';
+  const parts = dateKey.split('-');
+  if (parts.length !== 3) return dateKey;
   const dateObj = new Date(Date.UTC(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]), 12, 0, 0));
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(dateObj);
 }
 
-// Handle date selection from calendar picker input
-function handleCustomDateSelect(isoDate) {
-  if (!isoDate) return;
-  const formatted = parseISODateToFormatted(isoDate);
-  setFinishedDate(formatted);
+// Check if a match falls inside the selected Finished Date Range
+function isMatchInFinishedRange(match) {
+  const { start, end } = state.finishedDateRange;
+  if (!start && !end) return true;
+  const matchKey = getMatchISTDateKey(match.start_timestamp);
+  if (!matchKey) return true;
+  if (start && !end) return matchKey === start;
+  if (!start && end) return matchKey === end;
+  return matchKey >= start && matchKey <= end;
 }
 
-// Finished Matches Single-Date Switcher (e.g. 'all', 'Aug 29', 'Aug 30')
-function setFinishedDate(dateStr) {
-  state.finishedDateFilter = dateStr;
-  updateFinishedDateDropdown();
+// Toggle Calendar Popover Dropdown
+function toggleCalendarDropdown(e) {
+  if (e) e.stopPropagation();
+  const dropdown = document.getElementById('calendarDropdown');
+  const btn = document.getElementById('finDateRangeBtn');
+  if (!dropdown) return;
+
+  const isHidden = dropdown.style.display === 'none' || !dropdown.style.display;
+  if (isHidden) {
+    if (state.finishedDateRange.start) {
+      const parts = state.finishedDateRange.start.split('-');
+      state.calViewYear = parseInt(parts[0]);
+      state.calViewMonth = parseInt(parts[1]) - 1;
+    }
+    renderCalendarGrid();
+    dropdown.style.display = 'block';
+    if (btn) btn.classList.add('open');
+  } else {
+    dropdown.style.display = 'none';
+    if (btn) btn.classList.remove('open');
+  }
+}
+
+// Close Calendar Popover
+function closeCalendarDropdown(e) {
+  if (e) e.stopPropagation();
+  const dropdown = document.getElementById('calendarDropdown');
+  const btn = document.getElementById('finDateRangeBtn');
+  if (dropdown) dropdown.style.display = 'none';
+  if (btn) btn.classList.remove('open');
+}
+
+// Previous Month Navigation
+function prevCalMonth(e) {
+  if (e) e.stopPropagation();
+  state.calViewMonth -= 1;
+  if (state.calViewMonth < 0) {
+    state.calViewMonth = 11;
+    state.calViewYear -= 1;
+  }
+  renderCalendarGrid();
+}
+
+// Next Month Navigation
+function nextCalMonth(e) {
+  if (e) e.stopPropagation();
+  state.calViewMonth += 1;
+  if (state.calViewMonth > 11) {
+    state.calViewMonth = 0;
+    state.calViewYear += 1;
+  }
+  renderCalendarGrid();
+}
+
+// Render Calendar Days Grid & Match Indicators
+function renderCalendarGrid() {
+  const monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+  
+  const titleEl = document.getElementById('calMonthTitle');
+  const gridEl = document.getElementById('calDaysGrid');
+  const hintEl = document.getElementById('calHintText');
+  if (titleEl) titleEl.textContent = `${monthNames[state.calViewMonth]} ${state.calViewYear}`;
+
+  if (hintEl) {
+    if (state.finishedDateRange.isPickingEnd) {
+      hintEl.textContent = `Start: ${formatDateKeyToShort(state.finishedDateRange.start)} · Click END date`;
+      hintEl.style.color = '#6366F1';
+      hintEl.style.fontWeight = '700';
+    } else if (state.finishedDateRange.start) {
+      const label = state.finishedDateRange.start === state.finishedDateRange.end 
+        ? formatDateKeyToShort(state.finishedDateRange.start)
+        : `${formatDateKeyToShort(state.finishedDateRange.start)} – ${formatDateKeyToShort(state.finishedDateRange.end)}`;
+      hintEl.textContent = `Range: ${label}`;
+      hintEl.style.color = '#10B981';
+      hintEl.style.fontWeight = '700';
+    } else {
+      hintEl.textContent = 'Click 1st date for start, 2nd for end';
+      hintEl.style.color = '#64748B';
+      hintEl.style.fontWeight = '500';
+    }
+  }
+
+  if (!gridEl) return;
+
+  // Collect all dates with finished matches in this sport
+  const finList = state.finishedMatchesCache[state.sport] || [];
+  const matchDatesSet = new Set();
+  finList.forEach(m => {
+    const k = getMatchISTDateKey(m.start_timestamp);
+    if (k) matchDatesSet.add(k);
+  });
+
+  const firstDayIndex = new Date(state.calViewYear, state.calViewMonth, 1).getDay();
+  const totalDays = new Date(state.calViewYear, state.calViewMonth + 1, 0).getDate();
+
+  let html = '';
+  // Empty leading cells
+  for (let i = 0; i < firstDayIndex; i++) {
+    html += '<div class="cal-cell empty"></div>';
+  }
+
+  const { start, end } = state.finishedDateRange;
+
+  for (let day = 1; day <= totalDays; day++) {
+    const mStr = String(state.calViewMonth + 1).padStart(2, '0');
+    const dStr = String(day).padStart(2, '0');
+    const dateKey = `${state.calViewYear}-${mStr}-${dStr}`;
+
+    const hasData = matchDatesSet.has(dateKey);
+    let classes = ['cal-cell'];
+    if (hasData) classes.push('has-data');
+
+    if (start && dateKey === start) classes.push('range-start');
+    if (end && dateKey === end) classes.push('range-end');
+    if (start && end && dateKey > start && dateKey < end) classes.push('in-range');
+
+    html += `<div class="${classes.join(' ')}" onclick="handleCalendarDayClick('${dateKey}', event)">${day}</div>`;
+  }
+
+  gridEl.innerHTML = html;
+}
+
+// Handle Day Click for 2-Click Range Selection
+function handleCalendarDayClick(dateKey, e) {
+  if (e) e.stopPropagation();
+
+  if (!state.finishedDateRange.isPickingEnd) {
+    // 1st Click: Select Start Date
+    state.finishedDateRange.start = dateKey;
+    state.finishedDateRange.end = dateKey;
+    state.finishedDateRange.isPickingEnd = true;
+    updateDateRangeButtonUI();
+    renderCalendarGrid();
+    renderFinishedAnalytics();
+    refreshCurrentView();
+  } else {
+    // 2nd Click: Select End Date
+    let start = state.finishedDateRange.start;
+    let end = dateKey;
+    if (end < start) {
+      const tmp = start;
+      start = end;
+      end = tmp;
+    }
+    state.finishedDateRange.start = start;
+    state.finishedDateRange.end = end;
+    state.finishedDateRange.isPickingEnd = false;
+
+    updateDateRangeButtonUI();
+    renderCalendarGrid();
+    renderFinishedAnalytics();
+    refreshCurrentView();
+  }
+}
+
+// Reset Date Range Filter (All Dates)
+function resetDateRange(e) {
+  if (e) e.stopPropagation();
+  state.finishedDateRange.start = null;
+  state.finishedDateRange.end = null;
+  state.finishedDateRange.isPickingEnd = false;
+
+  updateDateRangeButtonUI();
+  renderCalendarGrid();
   renderFinishedAnalytics();
   refreshCurrentView();
+  closeCalendarDropdown();
 }
 
-// Populate Single-Date filter buttons in Finished Matches view dynamically
-function updateFinishedDateDropdown() {
-  const container = document.getElementById('finishedDateOptions');
-  if (!container) return;
+// Update the Top Date Range Button Label & Highlight State
+function updateDateRangeButtonUI() {
+  const btn = document.getElementById('finDateRangeBtn');
+  const textEl = document.getElementById('dateRangeBtnText');
+  const { start, end } = state.finishedDateRange;
 
-  const finList = state.finishedMatchesCache[state.sport] || [];
-  const dateSet = new Set();
-  finList.forEach(m => {
-    const dt = getMatchISTDate(m.start_timestamp);
-    if (dt) dateSet.add(dt);
-  });
-
-  const dates = Array.from(dateSet).sort((a, b) => b.localeCompare(a));
-  const isAll = state.finishedDateFilter === 'all';
-  const calendarLabel = !isAll ? state.finishedDateFilter : 'Pick Date';
-
-  let html = `
-    <button class="fin-pill-btn fin-date-btn ${isAll ? 'active' : ''}" onclick="setFinishedDate('all')">
-      <i class="fa-solid fa-calendar-days"></i> All Dates
-    </button>
-    <div class="calendar-picker-wrapper">
-      <button class="fin-pill-btn calendar-btn ${!isAll ? 'active' : ''}" id="finCalendarBtn" onclick="openCalendarPicker()">
-        <i class="fa-regular fa-calendar-plus text-brand"></i>
-        <span id="calendarBtnText">${calendarLabel}</span>
-        <i class="fa-solid fa-chevron-down text-muted" style="font-size: 9px; margin-left: 2px;"></i>
-      </button>
-      <input type="date" id="finishedCustomDatePicker" class="hidden-date-input" onchange="handleCustomDateSelect(this.value)" />
-    </div>
-  `;
-
-  dates.forEach(d => {
-    const isActive = state.finishedDateFilter === d ? 'active' : '';
-    html += `<button class="fin-pill-btn fin-date-btn ${isActive}" onclick="setFinishedDate('${d}')"><i class="fa-regular fa-calendar"></i> ${d}</button>`;
-  });
-
-  container.innerHTML = html;
+  if (!start && !end) {
+    if (textEl) textEl.textContent = 'All Dates';
+    if (btn) btn.classList.remove('active');
+  } else if (start === end) {
+    if (textEl) textEl.textContent = formatDateKeyToShort(start);
+    if (btn) btn.classList.add('active');
+  } else {
+    if (textEl) textEl.textContent = `${formatDateKeyToShort(start)} – ${formatDateKeyToShort(end)}`;
+    if (btn) btn.classList.add('active');
+  }
 }
 
 // Value Bet Sort Controller (High/Low Value or Soonest)
@@ -314,7 +474,8 @@ function switchSport(sport) {
 
   updateLeagueDropdown();
   if (state.currentView === 'finished') {
-    updateFinishedDateDropdown();
+    renderCalendarGrid();
+    updateDateRangeButtonUI();
     renderFinishedAnalytics();
   }
   refreshCurrentView();
@@ -381,7 +542,8 @@ function refreshCurrentView() {
     sourceList = (state.allMatchesCache[state.sport] || []).filter(m => m.has_value === 1);
   } else if (state.currentView === 'finished') {
     sourceList = state.finishedMatchesCache[state.sport] || [];
-    updateFinishedDateDropdown();
+    renderCalendarGrid();
+    updateDateRangeButtonUI();
     renderFinishedAnalytics();
   }
   updateLeagueDropdown();
@@ -437,36 +599,14 @@ async function fetchMatches() {
   }
 }
 
-// Extract Indian Standard Time (IST) Date string (e.g. 'Aug 29', 'Aug 30')
-function getMatchISTDate(isoOrTimestamp) {
-  if (!isoOrTimestamp) return null;
-  const date = typeof isoOrTimestamp === 'number' 
-    ? (isoOrTimestamp > 1e11 ? new Date(isoOrTimestamp) : new Date(isoOrTimestamp * 1000)) 
-    : new Date(isoOrTimestamp);
-  if (isNaN(date.getTime())) return null;
-
-  try {
-    return new Intl.DateTimeFormat('en-US', {
-      timeZone: 'Asia/Kolkata',
-      month: 'short',
-      day: 'numeric'
-    }).format(date);
-  } catch (e) {
-    return null;
-  }
-}
-
-// Compute and Render Finished Matches Analytics & Realized ROI (with Single-Date Support)
+// Compute and Render Finished Matches Analytics & Realized ROI (with Date Range Support)
 function renderFinishedAnalytics() {
   const finTennis = state.finishedMatchesCache.tennis || [];
   const finFootball = state.finishedMatchesCache.football || [];
   const rawSportFin = state.sport === 'tennis' ? finTennis : (state.sport === 'football' ? finFootball : [...finTennis, ...finFootball]);
 
-  // Filter by selected single date first if specified
-  let allFin = rawSportFin;
-  if (state.finishedDateFilter && state.finishedDateFilter !== 'all') {
-    allFin = rawSportFin.filter(m => getMatchISTDate(m.start_timestamp) === state.finishedDateFilter);
-  }
+  // Filter by active date range
+  const allFin = rawSportFin.filter(m => isMatchInFinishedRange(m));
 
   const favMatches = allFin.filter(m => {
     const topProb = Math.max(m.fav_prob || 0, m.home_prob || 0, m.away_prob || 0, m.draw_prob || 0);
@@ -481,7 +621,12 @@ function renderFinishedAnalytics() {
   let activeCategoryMatches = [];
   let categoryBadgeText = '';
   let subLabelText = '';
-  const dateSuffix = (state.finishedDateFilter && state.finishedDateFilter !== 'all') ? ` · ${state.finishedDateFilter}` : '';
+
+  const { start, end } = state.finishedDateRange;
+  let dateSuffix = '';
+  if (start && end) {
+    dateSuffix = start === end ? ` · ${formatDateKeyToShort(start)}` : ` · ${formatDateKeyToShort(start)}–${formatDateKeyToShort(end)}`;
+  }
 
   if (state.finishedCategory === 'fav51') {
     activeCategoryMatches = favMatches;
@@ -559,10 +704,9 @@ function processAndRenderMatches(rawList) {
   if (state.currentView === 'value') {
     list = list.filter(m => m.has_value === 1);
   } else if (state.currentView === 'finished') {
-    // 1. Single Date Filter for Finished Matches
-    if (state.finishedDateFilter && state.finishedDateFilter !== 'all') {
-      list = list.filter(m => getMatchISTDate(m.start_timestamp) === state.finishedDateFilter);
-    }
+    // 1. Date Range Filter for Finished Matches
+    list = list.filter(m => isMatchInFinishedRange(m));
+
     // 2. Category Filter (Favorites >=51% vs Non-Favorites <51% vs All)
     if (state.finishedCategory === 'fav51') {
       list = list.filter(m => {
@@ -1102,7 +1246,11 @@ function updateSummary() {
     summaryEl.textContent = `Showing ${count} Value Bet ${sportName} matches (Sorted by ${sortDesc})`;
   } else if (state.currentView === 'finished') {
     const catDesc = state.finishedCategory === 'fav51' ? 'Favorites ≥51%' : (state.finishedCategory === 'under51' ? 'Non-Favorites <51%' : 'All Matches');
-    const dateDesc = (state.finishedDateFilter && state.finishedDateFilter !== 'all') ? ` · ${state.finishedDateFilter}` : '';
+    const { start, end } = state.finishedDateRange;
+    let dateDesc = '';
+    if (start && end) {
+      dateDesc = start === end ? ` · ${formatDateKeyToShort(start)}` : ` · ${formatDateKeyToShort(start)}–${formatDateKeyToShort(end)}`;
+    }
     summaryEl.textContent = `Showing ${count} Finished ${sportName} matches (${catDesc}${dateDesc})`;
   } else {
     summaryEl.textContent = `Showing ${count} Live & Upcoming ${sportName} matches`;
