@@ -303,6 +303,9 @@ def upsert_matches_batch(matches_list: List[Dict[str, Any]]) -> tuple[int, int]:
                         fav_side, fav_prob, fav_odds = "draw", dp, md
 
             fav_ev = round(((fav_prob / 100.0) * fav_odds - 1.0) * 100.0, 1) if (fav_prob > 0 and fav_odds > 1.0) else 0.0
+            has_value = 1 if fav_ev > 0.0 else 0
+            value_side = fav_side if fav_ev > 0.0 else None
+            value_edge = fav_ev if fav_ev > 0.0 else 0.0
 
             prepared_batch.append({
                 "id": mid,
@@ -327,9 +330,9 @@ def upsert_matches_batch(matches_list: List[Dict[str, Any]]) -> tuple[int, int]:
                 "fair_home": match_data.get("fair_home"),
                 "fair_draw": match_data.get("fair_draw"),
                 "fair_away": match_data.get("fair_away"),
-                "has_value": match_data.get("has_value", 0),
-                "value_side": match_data.get("value_side"),
-                "value_edge": match_data.get("value_edge", 0.0),
+                "has_value": has_value,
+                "value_side": value_side,
+                "value_edge": value_edge,
                 "fav_side": fav_side,
                 "fav_prob": fav_prob,
                 "fav_odds": fav_odds,

@@ -256,11 +256,17 @@ def fetch_match_data(session: requests.Session, url: str) -> Optional[Dict[str, 
                 start_time_iso, start_timestamp = parse_iso_time(data.get("start_time"))
 
                 odds = _extract_odds_data(data)
+                r_hp = _safe_round(odds["h_prob"], 1)
+                r_dp = _safe_round(odds["d_prob"], 1)
+                r_ap = _safe_round(odds["a_prob"], 1)
+                r_mh = _safe_round(odds["m_home"], 2)
+                r_md = _safe_round(odds["m_draw"], 2)
+                r_ma = _safe_round(odds["m_away"], 2)
 
                 has_val, val_side, val_edge = determine_value_bet(
                     sport,
-                    odds["h_prob"], odds["a_prob"], odds["d_prob"],
-                    odds["m_home"], odds["m_away"], odds["m_draw"]
+                    r_hp, r_ap, r_dp,
+                    r_mh, r_ma, r_md
                 )
 
                 time.sleep(0.04)
@@ -278,12 +284,12 @@ def fetch_match_data(session: requests.Session, url: str) -> Optional[Dict[str, 
                     "away_avatar": away_avatar,
                     "start_time": start_time_iso,
                     "start_timestamp": start_timestamp,
-                    "home_prob": _safe_round(odds["h_prob"], 1),
-                    "draw_prob": _safe_round(odds["d_prob"], 1),
-                    "away_prob": _safe_round(odds["a_prob"], 1),
-                    "market_home": _safe_round(odds["m_home"], 2),
-                    "market_draw": _safe_round(odds["m_draw"], 2),
-                    "market_away": _safe_round(odds["m_away"], 2),
+                    "home_prob": r_hp,
+                    "draw_prob": r_dp,
+                    "away_prob": r_ap,
+                    "market_home": r_mh,
+                    "market_draw": r_md,
+                    "market_away": r_ma,
                     "fair_home": _safe_round(odds["f_home"], 2),
                     "fair_draw": _safe_round(odds["f_draw"], 2),
                     "fair_away": _safe_round(odds["f_away"], 2),
