@@ -144,6 +144,27 @@
       </div>
     </div>
 
+    <!-- Value Bet Sort Control (Visible only in Value Bets view) -->
+    <div id="valueSortWrapper" class="value-sort-container" style="display: none;">
+      <div class="value-sort-bar">
+        <span class="value-sort-title">
+          <i class="fa-solid fa-arrow-down-wide-short text-amber"></i>
+          <span>Sort Value:</span>
+        </span>
+        <div class="value-sort-options">
+          <button class="val-sort-btn active" id="valSortDesc" onclick="setValueSort('desc')">
+            <i class="fa-solid fa-arrow-trend-up"></i> Highest Value
+          </button>
+          <button class="val-sort-btn" id="valSortAsc" onclick="setValueSort('asc')">
+            <i class="fa-solid fa-arrow-trend-down"></i> Lowest Value
+          </button>
+          <button class="val-sort-btn" id="valSortSoonest" onclick="setValueSort('soonest')">
+            <i class="fa-solid fa-clock"></i> Soonest First
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Active Filter Summary & Result Count -->
     <div class="results-meta">
       <div class="meta-count" id="matchesSummary">Showing 0 matches sorted by start time</div>
@@ -235,6 +256,6 @@
   <div id="toast" class="toast-notification"></div>
 
   <!-- Scripts -->
-  <script src="app.js?v=8"></script>
+  <script src="app.js?v=9"></script>
 </body>
 </html>

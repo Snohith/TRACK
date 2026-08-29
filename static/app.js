@@ -23,6 +23,7 @@ const state = {
   league: 'all',
   dateFilter: 'all',
   sortOrder: 'soonest', // 'soonest', 'asc', 'desc', 'value', 'prob'
+  valueSortOrder: 'desc', // 'desc' (highest value), 'asc' (lowest value), 'soonest'
   valueOnly: false,
   fav51Only: false,
   matches: [],
@@ -167,10 +168,12 @@ function switchView(view) {
   if (btnFinished) btnFinished.classList.toggle('active', view === 'finished');
 
   const analyticsCard = document.getElementById('finishedAnalyticsCard');
+  const valueSortWrapper = document.getElementById('valueSortWrapper');
   const valToggleWrap = document.getElementById('valueToggleWrapper');
   const dateFilterWrap = document.getElementById('dateFilterWrapper');
 
   if (analyticsCard) analyticsCard.style.display = view === 'finished' ? 'block' : 'none';
+  if (valueSortWrapper) valueSortWrapper.style.display = view === 'value' ? 'block' : 'none';
   if (valToggleWrap) valToggleWrap.style.display = view === 'value' ? 'none' : 'flex';
   if (dateFilterWrap) dateFilterWrap.style.display = view === 'finished' ? 'none' : 'block';
 
@@ -179,6 +182,21 @@ function switchView(view) {
   }
 
   updateViewPillCounts();
+  refreshCurrentView();
+}
+
+// Value Bet Sort Controller (High/Low Value or Soonest)
+function setValueSort(mode) {
+  state.valueSortOrder = mode;
+
+  const btnDesc = document.getElementById('valSortDesc');
+  const btnAsc = document.getElementById('valSortAsc');
+  const btnSoonest = document.getElementById('valSortSoonest');
+
+  if (btnDesc) btnDesc.classList.toggle('active', mode === 'desc');
+  if (btnAsc) btnAsc.classList.toggle('active', mode === 'asc');
+  if (btnSoonest) btnSoonest.classList.toggle('active', mode === 'soonest');
+
   refreshCurrentView();
 }
 
@@ -396,8 +414,18 @@ function processAndRenderMatches(rawList) {
     list = filterByDateIST(list, state.dateFilter);
   }
 
-  // 5. Smart Chronological & Status Sorting
-  list = sortMatchesSmart(list, state.sortOrder);
+  // 5. Sorting
+  if (state.currentView === 'value') {
+    if (state.valueSortOrder === 'desc') {
+      list = list.sort((a, b) => (b.value_edge || 0) - (a.value_edge || 0) || (a.start_timestamp || 0) - (b.start_timestamp || 0));
+    } else if (state.valueSortOrder === 'asc') {
+      list = list.sort((a, b) => (a.value_edge || 0) - (b.value_edge || 0) || (a.start_timestamp || 0) - (b.start_timestamp || 0));
+    } else {
+      list = sortMatchesSmart(list, 'soonest');
+    }
+  } else {
+    list = sortMatchesSmart(list, state.sortOrder);
+  }
 
   state.matches = list;
   renderMatches();
@@ -860,11 +888,17 @@ function resetFilters() {
 
 function updateSummary() {
   const sportName = state.sport === 'tennis' ? 'Tennis' : 'Football';
-  const viewName = state.currentView === 'finished' ? 'Finished' : (state.currentView === 'value' ? 'Value Bet' : 'Live & Upcoming');
   const count = state.matches.length;
   const summaryEl = document.getElementById('matchesSummary');
-  if (summaryEl) {
-    summaryEl.textContent = 'Showing ' + count + ' ' + viewName + ' ' + sportName + ' matches';
+  if (!summaryEl) return;
+
+  if (state.currentView === 'value') {
+    const sortDesc = state.valueSortOrder === 'desc' ? 'Highest Value' : (state.valueSortOrder === 'asc' ? 'Lowest Value' : 'Start Time');
+    summaryEl.textContent = `Showing ${count} Value Bet ${sportName} matches (Sorted by ${sortDesc})`;
+  } else if (state.currentView === 'finished') {
+    summaryEl.textContent = `Showing ${count} Finished ${sportName} matches`;
+  } else {
+    summaryEl.textContent = `Showing ${count} Live & Upcoming ${sportName} matches`;
   }
 }
 
