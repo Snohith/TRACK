@@ -249,14 +249,14 @@ async function checkStaticDataFallback() {
       const badge = document.getElementById('scraperStateBadge');
       if (badge) badge.innerHTML = '<i class="fa-solid fa-circle-check"></i> Auto-Synced Archive';
       const statusText = document.getElementById('scraperStatusText');
-      if (statusText) statusText.textContent = 'Loaded ' + totalActive + ' active matches. Scraper updates hourly via GitHub Actions.';
+      if (statusText) statusText.textContent = 'Loaded ' + totalActive + ' active matches. Scraper updates every 10m via GitHub Actions.';
 
       if (staticData.exported_at) {
         const lastMeta = document.getElementById('lastScrapeMeta');
         if (lastMeta) lastMeta.innerHTML = '<i class="fa-regular fa-clock"></i> Last scraped: ' + formatIST12Hour(staticData.exported_at);
       }
       const nextMeta = document.getElementById('nextScrapeMeta');
-      if (nextMeta) nextMeta.innerHTML = '<i class="fa-solid fa-clock"></i> Hourly Auto-Scrape';
+      if (nextMeta) nextMeta.innerHTML = '<i class="fa-solid fa-bolt text-amber"></i> Every 10m Auto-Sync';
 
       updateLeagueDropdown();
       refreshCurrentView();

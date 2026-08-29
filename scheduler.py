@@ -45,15 +45,15 @@ def start_scheduler() -> BackgroundScheduler:
     _scheduler.add_job(
         _scheduled_job,
         trigger="interval",
-        hours=1,
-        id="statsarena_hourly_scraper",
-        name="Hourly StatsArena Sitemap Scraper",
+        minutes=10,
+        id="statsarena_10min_scraper",
+        name="10-Minute StatsArena Scraper & Result Resolver",
         replace_existing=True,
         max_instances=1,
         coalesce=True,
     )
     _scheduler.start()
-    logger.info("[Scheduler] Hourly background scraper initialized (interval: 1 hour).")
+    logger.info("[Scheduler] Background scraper initialized (interval: 10 minutes).")
     return _scheduler
 
 

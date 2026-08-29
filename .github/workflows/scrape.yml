@@ -1,9 +1,9 @@
-name: Auto Hourly StatsArena Scraper
+name: Auto 10-Minute StatsArena Scraper & Live Resolver
 
 on:
   schedule:
-    # Run every 1 hour automatically
-    - cron: '0 * * * *'
+    # Run every 10 minutes automatically
+    - cron: '*/10 * * * *'
   workflow_dispatch: # Allows manual trigger from GitHub Actions tab
   push:
     branches:
