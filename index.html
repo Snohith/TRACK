@@ -160,41 +160,6 @@
           </button>
         </div>
 
-        <div class="filters-row">
-          <!-- Tournament / League Dropdown -->
-          <div class="filter-item">
-            <select id="leagueSelect" onchange="applyFilters()">
-              <option value="all">🏆 All Tournaments</option>
-            </select>
-          </div>
-
-          <!-- Date Filter -->
-          <div class="filter-item" id="dateFilterWrapper">
-            <select id="dateSelect" onchange="applyFilters()">
-              <option value="all">📅 All Dates</option>
-              <option value="today">Today (IST)</option>
-              <option value="tomorrow">Tomorrow (IST)</option>
-              <option value="upcoming">Next 3 Days</option>
-            </select>
-          </div>
-
-          <!-- Favorites >=51% Only Toggle -->
-          <div class="filter-item toggle-item">
-            <label class="toggle-switch">
-              <input type="checkbox" id="fav51OnlyToggle" onchange="applyFilters()">
-              <span class="slider"></span>
-            </label>
-            <span class="toggle-label"><i class="fa-solid fa-star text-amber"></i> ≥51% Favs Only</span>
-          </div>
-
-          <!-- Value Bets Toggle -->
-          <div class="filter-item toggle-item" id="valueToggleWrapper">
-            <label class="toggle-switch">
-              <input type="checkbox" id="valueOnlyToggle" onchange="applyFilters()">
-              <span class="slider"></span>
-            </label>
-            <span class="toggle-label"><i class="fa-solid fa-fire text-amber"></i> Value Bets</span>
-          </div>
         </div>
       </div>
     </section>
@@ -290,6 +255,6 @@
   <div id="toast" class="toast-notification"></div>
 
   <!-- Scripts -->
-  <script src="app.js?v=6"></script>
+  <script src="app.js?v=7"></script>
 </body>
 </html>
