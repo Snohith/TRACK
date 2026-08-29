@@ -69,6 +69,27 @@
   <!-- Main App Container -->
   <main class="main-content">
     
+    <!-- Top View Switcher (Live & Upcoming / Value Bets / Finished Matches) -->
+    <div class="view-switcher-container">
+      <div class="view-segmented-control">
+        <button class="view-btn active" id="viewBtnActive" onclick="switchView('active')">
+          <i class="fa-solid fa-satellite-dish"></i>
+          <span>Live & Upcoming</span>
+          <span class="view-pill" id="activeCountPill">0</span>
+        </button>
+        <button class="view-btn" id="viewBtnValue" onclick="switchView('value')">
+          <i class="fa-solid fa-fire text-amber"></i>
+          <span>Value Bets (+EV)</span>
+          <span class="view-pill value-pill" id="valueCountPill">0</span>
+        </button>
+        <button class="view-btn" id="viewBtnFinished" onclick="switchView('finished')">
+          <i class="fa-solid fa-flag-checkered"></i>
+          <span>Finished Matches</span>
+          <span class="view-pill finished-pill" id="finishedCountPill">0</span>
+        </button>
+      </div>
+    </div>
+
     <!-- Sport Navigation Tabs -->
     <div class="tabs-container">
       <div class="sport-tabs">
@@ -82,6 +103,43 @@
           <span class="tab-title">Football</span>
           <span class="tab-badge" id="footballCountBadge">0</span>
         </button>
+      </div>
+    </div>
+
+    <!-- Finished Matches ROI & Performance Analytics Card (Only shown in Finished view) -->
+    <div id="finishedAnalyticsCard" class="analytics-card" style="display: none;">
+      <div class="analytics-header">
+        <div class="analytics-title">
+          <i class="fa-solid fa-chart-line text-brand"></i>
+          <span>Favorites & Value Bet Performance Tracker</span>
+        </div>
+        <span class="analytics-badge">Strategy: ≥51% Probability +EV</span>
+      </div>
+      <div class="analytics-grid">
+        <div class="stat-box">
+          <span class="stat-label">Total Finished</span>
+          <span class="stat-value" id="roiTotalFinished">0</span>
+        </div>
+        <div class="stat-box">
+          <span class="stat-label">Favorites (≥51%)</span>
+          <span class="stat-value" id="roiTotalFavs">0</span>
+        </div>
+        <div class="stat-box">
+          <span class="stat-label">Win Rate</span>
+          <span class="stat-value text-emerald" id="roiWinRate">0%</span>
+        </div>
+        <div class="stat-box">
+          <span class="stat-label">Total Staked (1u)</span>
+          <span class="stat-value" id="roiTotalStaked">0.00u</span>
+        </div>
+        <div class="stat-box">
+          <span class="stat-label">Net Profit</span>
+          <span class="stat-value text-emerald" id="roiNetProfit">+0.00u</span>
+        </div>
+        <div class="stat-box highlight">
+          <span class="stat-label">Realized ROI</span>
+          <span class="stat-value text-emerald" id="roiPercentage">+0.0%</span>
+        </div>
       </div>
     </div>
 
@@ -110,7 +168,7 @@
           </div>
 
           <!-- Date Filter -->
-          <div class="filter-item">
+          <div class="filter-item" id="dateFilterWrapper">
             <select id="dateSelect" onchange="applyFilters()">
               <option value="all">📅 All Dates</option>
               <option value="today">Today (IST)</option>
@@ -126,11 +184,21 @@
               <option value="asc">⏰ Earliest</option>
               <option value="desc">⏰ Latest</option>
               <option value="value">🔥 Highest Value</option>
+              <option value="prob">⭐ Highest Win %</option>
             </select>
           </div>
 
-          <!-- Value Bets Toggle -->
+          <!-- Favorites >=51% Only Toggle -->
           <div class="filter-item toggle-item">
+            <label class="toggle-switch">
+              <input type="checkbox" id="fav51OnlyToggle" onchange="applyFilters()">
+              <span class="slider"></span>
+            </label>
+            <span class="toggle-label"><i class="fa-solid fa-star text-amber"></i> ≥51% Favs Only</span>
+          </div>
+
+          <!-- Value Bets Toggle -->
+          <div class="filter-item toggle-item" id="valueToggleWrapper">
             <label class="toggle-switch">
               <input type="checkbox" id="valueOnlyToggle" onchange="applyFilters()">
               <span class="slider"></span>

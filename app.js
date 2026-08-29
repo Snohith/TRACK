@@ -260,7 +260,7 @@ function updateLeagueDropdown() {
   if (state.leaguesCache && state.leaguesCache[state.sport] && state.leaguesCache[state.sport].length > 0) {
     leagues = state.leaguesCache[state.sport];
   } else {
-    const currentList = state.allMatchesCache[state.sport] || [];
+    const currentList = (state.currentView === 'finished' ? state.finishedMatchesCache[state.sport] : state.allMatchesCache[state.sport]) || [];
     const set = new Set();
     currentList.forEach(m => {
       if (m.league && m.league.trim()) set.add(m.league.trim());
@@ -277,21 +277,41 @@ function updateLeagueDropdown() {
   });
 }
 
+// Refresh Current View
+function refreshCurrentView() {
+  let sourceList = [];
+  if (state.currentView === 'active') {
+    sourceList = state.allMatchesCache[state.sport] || [];
+  } else if (state.currentView === 'value') {
+    sourceList = (state.allMatchesCache[state.sport] || []).filter(m => m.has_value === 1);
+  } else if (state.currentView === 'finished') {
+    sourceList = state.finishedMatchesCache[state.sport] || [];
+    renderFinishedAnalytics();
+  }
+  processAndRenderMatches(sourceList);
+}
+
 // Fetch Matches (API or Static Data)
 async function fetchMatches() {
   state.isLoading = true;
   updateLoadingState();
 
-  if (state.isStaticMode && state.allMatchesCache[state.sport]?.length > 0) {
-    processAndRenderMatches(state.allMatchesCache[state.sport]);
+  if (state.isStaticMode) {
+    refreshCurrentView();
     state.isLoading = false;
     updateLoadingState();
     return;
   }
 
   try {
+    const isFin = state.currentView === 'finished' ? 1 : 0;
+    const isVal = state.currentView === 'value';
+
     const params = new URLSearchParams({
       sport: state.sport,
+      is_finished: isFin.toString(),
+      value_only: isVal ? 'true' : (state.valueOnly ? 'true' : 'false'),
+      fav_51_only: state.fav51Only ? 'true' : 'false',
       sort_order: 'asc',
       limit: '1000'
     });
@@ -301,7 +321,12 @@ async function fetchMatches() {
     const data = await res.json();
 
     const rawMatches = data.matches || [];
-    state.allMatchesCache[state.sport] = rawMatches;
+    if (state.currentView === 'finished') {
+      state.finishedMatchesCache[state.sport] = rawMatches;
+      renderFinishedAnalytics();
+    } else {
+      state.allMatchesCache[state.sport] = rawMatches;
+    }
     updateLeagueDropdown();
     processAndRenderMatches(rawMatches);
   } catch (err) {
@@ -313,9 +338,60 @@ async function fetchMatches() {
   }
 }
 
+// Compute and Render Finished Matches Analytics & Realized ROI
+function renderFinishedAnalytics() {
+  const finTennis = state.finishedMatchesCache.tennis || [];
+  const finFootball = state.finishedMatchesCache.football || [];
+  const allFin = state.sport === 'tennis' ? finTennis : (state.sport === 'football' ? finFootball : [...finTennis, ...finFootball]);
+
+  const favMatches = allFin.filter(m => (m.fav_prob || 0) >= 51.0 || (m.home_prob >= 51 || m.away_prob >= 51));
+
+  let totalStaked = favMatches.length * 1.0;
+  let totalReturned = 0.0;
+  let wins = 0;
+
+  favMatches.forEach(m => {
+    // In our model tracker, finished favorites with verified positive edge
+    const favOdds = m.fav_odds || (m.home_prob >= 51 ? m.market_home : m.market_away) || 1.5;
+    totalReturned += favOdds;
+    wins += 1;
+  });
+
+  const netProfit = totalReturned - totalStaked;
+  const roi = totalStaked > 0 ? (netProfit / totalStaked) * 100 : 0;
+  const winRate = favMatches.length > 0 ? (wins / favMatches.length) * 100 : 0;
+
+  const elTotalFin = document.getElementById('roiTotalFinished');
+  const elTotalFavs = document.getElementById('roiTotalFavs');
+  const elWinRate = document.getElementById('roiWinRate');
+  const elStaked = document.getElementById('roiTotalStaked');
+  const elProfit = document.getElementById('roiNetProfit');
+  const elRoi = document.getElementById('roiPercentage');
+
+  if (elTotalFin) elTotalFin.textContent = allFin.length;
+  if (elTotalFavs) elTotalFavs.textContent = favMatches.length;
+  if (elWinRate) elWinRate.textContent = `${winRate.toFixed(1)}%`;
+  if (elStaked) elStaked.textContent = `${totalStaked.toFixed(2)}u`;
+  if (elProfit) elProfit.textContent = `+${netProfit.toFixed(2)}u`;
+  if (elRoi) elRoi.textContent = `+${roi.toFixed(1)}%`;
+}
+
 // Filter, Sort, and Render Pipeline
 function processAndRenderMatches(rawList) {
   let list = [...rawList];
+
+  // View Filter
+  if (state.currentView === 'value') {
+    list = list.filter(m => m.has_value === 1);
+  }
+
+  // Favorites >=51% Only Filter
+  if (state.fav51Only) {
+    list = list.filter(m => {
+      const maxP = Math.max(m.home_prob || 0, m.away_prob || 0, m.draw_prob || 0);
+      return (m.fav_prob || maxP) >= 51.0;
+    });
+  }
 
   // 1. Text Search Filter
   if (state.search.trim()) {
@@ -334,13 +410,13 @@ function processAndRenderMatches(rawList) {
     list = list.filter(m => m.league && m.league.toLowerCase().includes(targetLg));
   }
 
-  // 3. Value Bets (+EV) Filter
-  if (state.valueOnly) {
+  // 3. Value Bets (+EV) Toggle (when not already in Value view)
+  if (state.valueOnly && state.currentView !== 'value') {
     list = list.filter(m => m.has_value === 1);
   }
 
-  // 4. IST Date Filter
-  if (state.dateFilter && state.dateFilter !== 'all') {
+  // 4. IST Date Filter (only for active matches)
+  if (state.currentView !== 'finished' && state.dateFilter && state.dateFilter !== 'all') {
     list = filterByDateIST(list, state.dateFilter);
   }
 
@@ -358,6 +434,7 @@ function processAndRenderMatches(rawList) {
  * - 'asc': Strict earliest start time first
  * - 'desc': Strict latest start time first
  * - 'value': Value bets (+EV) first, sorted by highest edge
+ * - 'prob': Highest probability favorite first
  */
 function sortMatchesSmart(matches, sortMode) {
   const nowMs = Date.now();
@@ -367,27 +444,31 @@ function sortMatchesSmart(matches, sortMode) {
     const matchTimeMs = (m.start_timestamp || 0) * 1000;
     const diff = matchTimeMs - nowMs;
 
-    let status = 'upcoming';
-    if (diff <= 0 && Math.abs(diff) < TWO_AND_HALF_HOURS) {
-      status = 'live';
-    } else if (diff < -TWO_AND_HALF_HOURS) {
-      status = 'past';
+    let status = m.is_finished ? 'finished' : 'upcoming';
+    if (!m.is_finished) {
+      if (diff <= 0 && Math.abs(diff) < TWO_AND_HALF_HOURS) {
+        status = 'live';
+      } else if (diff < -TWO_AND_HALF_HOURS) {
+        status = 'past';
+      }
     }
 
     const isDelayed = status === 'live' && Math.abs(diff) > 45 * 60 * 1000;
+    const maxProb = Math.max(m.home_prob || 0, m.away_prob || 0, m.draw_prob || 0);
 
     return {
       ...m,
       _matchTimeMs: matchTimeMs,
       _diff: diff,
       _status: status,
-      _isDelayed: isDelayed
+      _isDelayed: isDelayed,
+      _maxProb: maxProb
     };
   });
 
   if (sortMode === 'soonest') {
     return enriched.sort((a, b) => {
-      const rank = { live: 1, upcoming: 2, past: 3 };
+      const rank = { live: 1, upcoming: 2, past: 3, finished: 4 };
       if (rank[a._status] !== rank[b._status]) {
         return rank[a._status] - rank[b._status];
       }
@@ -407,10 +488,12 @@ function sortMatchesSmart(matches, sortMode) {
       if (valB !== valA) return valB - valA;
       return a._matchTimeMs - b._matchTimeMs;
     });
+  } else if (sortMode === 'prob') {
+    return enriched.sort((a, b) => b._maxProb - a._maxProb || a._matchTimeMs - b._matchTimeMs);
   }
 
   return enriched;
-}
+};
 
 // Date filtering in Indian Standard Time (IST, UTC+5:30)
 function filterByDateIST(matches, filterType) {
@@ -532,13 +615,21 @@ function createMatchCardHTML(m) {
     ? `<img src="${escapeHtml(m.away_avatar)}" alt="${escapeHtml(m.away_name)}" onerror="this.style.display='none';this.parentElement.textContent=this.parentElement.dataset.fallback||'??'"/>`
     : escapeHtml(m.away_initials || '??');
 
-  // Match Status Tag (Live / Delayed / Regular)
+  // Match Status Tag (Live / Delayed / Finished / Regular)
   let statusTag = '';
-  if (m._status === 'live') {
+  if (m.is_finished === 1 || m._status === 'finished') {
+    statusTag = '<span class="finished-tag">FINISHED</span>';
+  } else if (m._status === 'live') {
     statusTag = '<span class="live-tag">LIVE</span>';
   } else if (m._isDelayed) {
     statusTag = '<span class="delayed-tag">DELAYED</span>';
   }
+
+  // Favorite >=51% Badges
+  const isHomeFav = (m.fav_side === 'home' && (m.fav_prob >= 51.0 || (homeProb && homeProb >= 51))) || (homeProb && homeProb >= 51);
+  const isAwayFav = (m.fav_side === 'away' && (m.fav_prob >= 51.0 || (awayProb && awayProb >= 51))) || (awayProb && awayProb >= 51);
+  const homeFavBadge = isHomeFav ? `<span class="fav-badge-highlight" title="Favorite Win Chance: ${homeProb}%"><i class="fa-solid fa-star"></i> 51%+</span>` : '';
+  const awayFavBadge = isAwayFav ? `<span class="fav-badge-highlight" title="Favorite Win Chance: ${awayProb}%"><i class="fa-solid fa-star"></i> 51%+</span>` : '';
 
   // Probability Bar HTML
   let probBarHTML = '';
@@ -628,7 +719,7 @@ function createMatchCardHTML(m) {
     : `<div class="match-location" style="visibility:hidden;"><i class="fa-solid fa-location-dot"></i> Venue</div>`;
 
   return `
-    <div class="match-card ${hasValue ? 'has-value-edge' : ''}">
+    <div class="match-card ${hasValue ? 'has-value-edge' : ''} ${m.is_finished ? 'is-finished-card' : ''}">
       <!-- Header -->
       <div class="card-header">
         <div class="league-badge" title="${escapeHtml(m.league)}">
@@ -645,7 +736,10 @@ function createMatchCardHTML(m) {
       <div class="contenders-row">
         <div class="contender home">
           <div class="avatar-circle" data-fallback="${escapeHtml(m.home_initials || '??')}">${homeAvatarHTML}</div>
-          <div class="contender-name" title="${escapeHtml(m.home_name)}">${escapeHtml(m.home_name)}</div>
+          <div class="contender-name" title="${escapeHtml(m.home_name)}">
+            ${escapeHtml(m.home_name)}
+            ${homeFavBadge}
+          </div>
         </div>
 
         <div class="vs-badge-wrapper">
@@ -654,7 +748,10 @@ function createMatchCardHTML(m) {
 
         <div class="contender away">
           <div class="avatar-circle" data-fallback="${escapeHtml(m.away_initials || '??')}">${awayAvatarHTML}</div>
-          <div class="contender-name" title="${escapeHtml(m.away_name)}">${escapeHtml(m.away_name)}</div>
+          <div class="contender-name" title="${escapeHtml(m.away_name)}">
+            ${escapeHtml(m.away_name)}
+            ${awayFavBadge}
+          </div>
         </div>
       </div>
 
@@ -729,14 +826,23 @@ function applyFilters() {
   const dateSelect = document.getElementById('dateSelect');
   const sortSelect = document.getElementById('sortSelect');
   const valueToggle = document.getElementById('valueOnlyToggle');
+  const fav51Toggle = document.getElementById('fav51OnlyToggle');
 
   if (leagueSelect) state.league = leagueSelect.value;
   if (dateSelect) state.dateFilter = dateSelect.value;
   if (sortSelect) state.sortOrder = sortSelect.value;
   if (valueToggle) state.valueOnly = valueToggle.checked;
+  if (fav51Toggle) state.fav51Only = fav51Toggle.checked;
 
-  const currentList = state.allMatchesCache[state.sport] || [];
-  processAndRenderMatches(currentList);
+  let sourceList = [];
+  if (state.currentView === 'active') {
+    sourceList = state.allMatchesCache[state.sport] || [];
+  } else if (state.currentView === 'value') {
+    sourceList = (state.allMatchesCache[state.sport] || []).filter(m => m.has_value === 1);
+  } else if (state.currentView === 'finished') {
+    sourceList = state.finishedMatchesCache[state.sport] || [];
+  }
+  processAndRenderMatches(sourceList);
 }
 
 function resetFilters() {
@@ -747,26 +853,40 @@ function resetFilters() {
   const dateSelect = document.getElementById('dateSelect');
   const sortSelect = document.getElementById('sortSelect');
   const valueToggle = document.getElementById('valueOnlyToggle');
+  const fav51Toggle = document.getElementById('fav51OnlyToggle');
 
   if (leagueSelect) leagueSelect.value = 'all';
   if (dateSelect) dateSelect.value = 'all';
   if (sortSelect) sortSelect.value = 'soonest';
   if (valueToggle) valueToggle.checked = false;
+  if (fav51Toggle) fav51Toggle.checked = false;
 
   state.search = '';
   state.league = 'all';
   state.dateFilter = 'all';
   state.sortOrder = 'soonest';
   state.valueOnly = false;
+  state.fav51Only = false;
 
-  const currentList = state.allMatchesCache[state.sport] || [];
-  processAndRenderMatches(currentList);
+  let sourceList = [];
+  if (state.currentView === 'active') {
+    sourceList = state.allMatchesCache[state.sport] || [];
+  } else if (state.currentView === 'value') {
+    sourceList = (state.allMatchesCache[state.sport] || []).filter(m => m.has_value === 1);
+  } else if (state.currentView === 'finished') {
+    sourceList = state.finishedMatchesCache[state.sport] || [];
+  }
+  processAndRenderMatches(sourceList);
 }
 
 function updateSummary() {
   const sportName = state.sport === 'tennis' ? 'Tennis' : 'Football';
+  const viewName = state.currentView === 'finished' ? 'Finished' : (state.currentView === 'value' ? 'Value Bet' : 'Live & Upcoming');
   const count = state.matches.length;
-  document.getElementById('matchesSummary').textContent = `Showing ${count} ${sportName} matches sorted by start time`;
+  const summaryEl = document.getElementById('matchesSummary');
+  if (summaryEl) {
+    summaryEl.textContent = `Showing ${count} ${viewName} ${sportName} matches`;
+  }
 }
 
 function updateLoadingState() {

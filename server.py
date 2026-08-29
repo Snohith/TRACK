@@ -41,13 +41,16 @@ async def get_matches(
     search: Optional[str] = Query(None, description="Search term"),
     league: Optional[str] = Query(None, description="Filter by league"),
     value_only: bool = Query(False, description="Filter value bets only"),
+    fav_51_only: bool = Query(False, description="Filter favorites with >=51% probability"),
+    is_finished: int = Query(0, description="0 for active, 1 for finished"),
     sort_order: str = Query("asc", description="asc or desc"),
     limit: int = Query(500, ge=1, le=1000, description="Max results"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
 ):
     matches = database.get_matches(
         sport=sport, search=search, league=league,
-        value_only=value_only, sort_order=sort_order,
+        value_only=value_only, fav_51_only=fav_51_only,
+        is_finished=is_finished, sort_order=sort_order,
         limit=limit, offset=offset,
     )
     return {"matches": matches, "count": len(matches)}

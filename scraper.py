@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 import httpx
 import requests
+import concurrent.futures
 
 import database
 
@@ -225,9 +226,7 @@ def _extract_odds_data(data: dict) -> dict:
     }
 
 
-async def fetch_match_data(
-    client: httpx.AsyncClient, semaphore: asyncio.Semaphore, url: str
-) -> Optional[Dict[str, Any]]:
+def fetch_match_data(session: requests.Session, url: str) -> Optional[Dict[str, Any]]:
     match_id = extract_match_id(url)
     if not match_id:
         return None
@@ -235,86 +234,79 @@ async def fetch_match_data(
     sport = determine_sport(url, match_id)
     api_url = f"{API_BASE_URL}/{match_id}"
 
-    async with semaphore:
-        for attempt in range(5):
-            try:
-                resp = await client.get(api_url, headers=HEADERS, timeout=14.0)
-
-                if resp.status_code == 200:
-                    data = resp.json()
-
-                    league_raw = data.get("league") or ""
-                    league, location = clean_league_and_location(league_raw, sport)
-
-                    home_name = data.get("home_team") or "Home"
-                    away_name = data.get("away_team") or "Away"
-
-                    avatars = data.get("contender_avatar") or {}
-                    home_avatar = avatars.get("home") or ""
-                    away_avatar = avatars.get("away") or ""
-
-                    start_time_iso, start_timestamp = parse_iso_time(data.get("start_time"))
-
-                    odds = _extract_odds_data(data)
-
-                    has_val, val_side, val_edge = determine_value_bet(
-                        sport,
-                        odds["h_prob"], odds["a_prob"], odds["d_prob"],
-                        odds["m_home"], odds["m_away"], odds["m_draw"]
-                    )
-
-                    await asyncio.sleep(0.12)
-                    return {
-                        "id": match_id,
-                        "url": url,
-                        "sport": sport,
-                        "league": league,
-                        "location": location,
-                        "home_name": home_name,
-                        "away_name": away_name,
-                        "home_initials": get_initials(home_name),
-                        "away_initials": get_initials(away_name),
-                        "home_avatar": home_avatar,
-                        "away_avatar": away_avatar,
-                        "start_time": start_time_iso,
-                        "start_timestamp": start_timestamp,
-                        "home_prob": _safe_round(odds["h_prob"], 1),
-                        "draw_prob": _safe_round(odds["d_prob"], 1),
-                        "away_prob": _safe_round(odds["a_prob"], 1),
-                        "market_home": _safe_round(odds["m_home"], 2),
-                        "market_draw": _safe_round(odds["m_draw"], 2),
-                        "market_away": _safe_round(odds["m_away"], 2),
-                        "fair_home": _safe_round(odds["f_home"], 2),
-                        "fair_draw": _safe_round(odds["f_draw"], 2),
-                        "fair_away": _safe_round(odds["f_away"], 2),
-                        "has_value": has_val,
-                        "value_side": val_side,
-                        "value_edge": val_edge,
-                        "raw_json": json.dumps(data)
-                    }
-
-                elif resp.status_code == 429:
-                    backoff = 3.0 * (attempt + 1)
-                    logger.warning(f"Rate limited on {match_id}, backing off {backoff}s (attempt {attempt + 1}/5)")
-                    await asyncio.sleep(backoff)
-
-                elif resp.status_code == 404:
-                    logger.debug(f"Match {match_id} not found (404)")
+    for attempt in range(2):
+        try:
+            resp = session.get(api_url, timeout=12)
+            if resp.status_code == 200:
+                data = resp.json()
+                if not data or not isinstance(data, dict):
                     return None
 
-                else:
-                    logger.warning(f"Unexpected status {resp.status_code} for {match_id}")
-                    await asyncio.sleep(1.0)
+                league_raw = data.get("league") or data.get("tournament_name") or ""
+                league, location = clean_league_and_location(league_raw, sport)
+                if not location and data.get("location"):
+                    location = data.get("location")
+                home_name = data.get("home_team") or "Home"
+                away_name = data.get("away_team") or "Away"
 
-            except httpx.TimeoutException:
-                logger.warning(f"Timeout fetching {match_id} (attempt {attempt + 1}/4)")
-                await asyncio.sleep(1.5 * (attempt + 1))
-            except httpx.HTTPError as e:
-                logger.warning(f"HTTP error for {match_id}: {e} (attempt {attempt + 1}/4)")
-                await asyncio.sleep(1.0 * (attempt + 1))
-            except Exception as e:
-                logger.error(f"Unexpected error for {match_id}: {e}", exc_info=True)
-                await asyncio.sleep(1.0 * (attempt + 1))
+                avatars = data.get("contender_avatar") or {}
+                home_avatar = avatars.get("home") or ""
+                away_avatar = avatars.get("away") or ""
+
+                start_time_iso, start_timestamp = parse_iso_time(data.get("start_time"))
+
+                odds = _extract_odds_data(data)
+
+                has_val, val_side, val_edge = determine_value_bet(
+                    sport,
+                    odds["h_prob"], odds["a_prob"], odds["d_prob"],
+                    odds["m_home"], odds["m_away"], odds["m_draw"]
+                )
+
+                time.sleep(0.04)
+                return {
+                    "id": match_id,
+                    "url": url,
+                    "sport": sport,
+                    "league": league,
+                    "location": location,
+                    "home_name": home_name,
+                    "away_name": away_name,
+                    "home_initials": get_initials(home_name),
+                    "away_initials": get_initials(away_name),
+                    "home_avatar": home_avatar,
+                    "away_avatar": away_avatar,
+                    "start_time": start_time_iso,
+                    "start_timestamp": start_timestamp,
+                    "home_prob": _safe_round(odds["h_prob"], 1),
+                    "draw_prob": _safe_round(odds["d_prob"], 1),
+                    "away_prob": _safe_round(odds["a_prob"], 1),
+                    "market_home": _safe_round(odds["m_home"], 2),
+                    "market_draw": _safe_round(odds["m_draw"], 2),
+                    "market_away": _safe_round(odds["m_away"], 2),
+                    "fair_home": _safe_round(odds["f_home"], 2),
+                    "fair_draw": _safe_round(odds["f_draw"], 2),
+                    "fair_away": _safe_round(odds["f_away"], 2),
+                    "has_value": has_val,
+                    "value_side": val_side,
+                    "value_edge": val_edge,
+                    "raw_json": json.dumps(data)
+                }
+
+            elif resp.status_code == 429:
+                logger.warning(f"Rate limited on {match_id}, sleeping 2s (attempt {attempt + 1}/2)")
+                time.sleep(2.0)
+
+            elif resp.status_code == 404:
+                logger.debug(f"Match {match_id} not found (404)")
+                return None
+
+            else:
+                time.sleep(0.5)
+
+        except Exception as e:
+            logger.warning(f"Fetch note for {match_id}: {e}")
+            time.sleep(0.8)
 
     return None
 
@@ -354,16 +346,15 @@ async def run_scraper_pipeline() -> Dict[str, Any]:
 
     try:
         urls = fetch_sitemap_urls()
-        scraper_live_state["total_urls"] = len(urls)
-        scraper_live_state["phase"] = "scraping_matches"
-        scraper_live_state["status_text"] = f"Scraping {len(urls)} matches from API..."
-        logger.info(f"Found {len(urls)} match URLs in sitemap.")
     except Exception as e:
         logger.error(f"Failed to fetch sitemap: {e}")
+        duration = round(time.time() - start_time, 2)
         scraper_live_state.update({
             "is_running": False,
             "phase": "error",
-            "status_text": f"Failed to fetch sitemap: {e}",
+            "status_text": f"Error: {e}",
+            "error_count": 1,
+            "duration_seconds": duration,
         })
         database.record_scraper_run({
             "timestamp": timestamp_iso,
@@ -374,29 +365,35 @@ async def run_scraper_pipeline() -> Dict[str, Any]:
         })
         return {"status": "error", "message": str(e)}
 
-    semaphore = asyncio.Semaphore(3)
+    # Collect active IDs from sitemap
+    active_sitemap_ids = set()
+    for u in urls:
+        mid = extract_match_id(u)
+        if mid:
+            active_sitemap_ids.add(mid)
+
+    # Sync finished matches that dropped out of the sitemap
+    finished_moved = database.sync_finished_matches(active_sitemap_ids)
+    if finished_moved > 0:
+        logger.info(f"Archived {finished_moved} completed matches to finished section.")
+
+    session = requests.Session()
+    adapter = requests.adapters.HTTPAdapter(pool_connections=12, pool_maxsize=12, max_retries=2)
+    session.mount('https://', adapter)
+    session.headers.update(HEADERS)
+
     results: List[Optional[Dict[str, Any]]] = []
     chunk_size = 15
 
-    async with httpx.AsyncClient(
-        timeout=httpx.Timeout(16.0, connect=10.0),
-        limits=httpx.Limits(max_connections=8, max_keepalive_connections=4)
-    ) as client:
-        for i in range(0, len(urls), chunk_size):
-            chunk = urls[i:i + chunk_size]
-            tasks = [fetch_match_data(client, semaphore, url) for url in chunk]
-            chunk_results = await asyncio.gather(*tasks, return_exceptions=True)
+    for i in range(0, len(urls), chunk_size):
+        chunk = urls[i:i + chunk_size]
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            chunk_results = list(executor.map(lambda u: fetch_match_data(session, u), chunk))
+            results.extend(chunk_results)
 
-            for r in chunk_results:
-                if isinstance(r, Exception):
-                    logger.error(f"Task exception: {r}")
-                    results.append(None)
-                else:
-                    results.append(r)
-
-            scraper_live_state["processed_count"] = len(results)
-            scraper_live_state["status_text"] = f"Scraping matches ({len(results)}/{len(urls)})..."
-            await asyncio.sleep(0.4)
+        scraper_live_state["processed_count"] = len(results)
+        scraper_live_state["status_text"] = f"Scraping matches ({len(results)}/{len(urls)})..."
+        time.sleep(0.2)
 
     scraper_live_state["phase"] = "saving"
     scraper_live_state["status_text"] = "Saving match records to database..."
@@ -465,8 +462,15 @@ async def run_scraper_pipeline() -> Dict[str, Any]:
 
 def export_static_json():
     """Export complete dataset to static/data.json for GitHub Pages hosting."""
-    tennis_matches = database.get_matches(sport="tennis", sort_order="asc", limit=500)
-    football_matches = database.get_matches(sport="football", sort_order="asc", limit=500)
+    active_tennis = database.get_matches(sport="tennis", is_finished=0, sort_order="asc", limit=500)
+    active_football = database.get_matches(sport="football", is_finished=0, sort_order="asc", limit=500)
+
+    finished_tennis = database.get_matches(sport="tennis", is_finished=1, sort_order="desc", limit=500)
+    finished_football = database.get_matches(sport="football", is_finished=1, sort_order="desc", limit=500)
+
+    value_tennis = [m for m in active_tennis if m.get("has_value") == 1]
+    value_football = [m for m in active_football if m.get("has_value") == 1]
+
     stats = database.get_stats()
     leagues_tennis = database.get_leagues("tennis")
     leagues_football = database.get_leagues("football")
@@ -479,8 +483,16 @@ def export_static_json():
             "football": leagues_football
         },
         "matches": {
-            "tennis": tennis_matches,
-            "football": football_matches
+            "tennis": active_tennis,
+            "football": active_football
+        },
+        "value_matches": {
+            "tennis": value_tennis,
+            "football": value_football
+        },
+        "finished_matches": {
+            "tennis": finished_tennis,
+            "football": finished_football
         }
     }
 
@@ -496,8 +508,11 @@ def export_static_json():
 
     # Also copy to root for GitHub Pages
     root_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data.json")
-    import shutil
-    shutil.copy2(out_file, root_file)
+    try:
+        import shutil
+        shutil.copy2(out_file, root_file)
+    except Exception as e:
+        logger.debug(f"Root data.json copy note: {e}")
 
 
 def scrape_sync():
