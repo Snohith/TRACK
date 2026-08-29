@@ -586,11 +586,11 @@ function createMatchCardHTML(m) {
 
   // Avatars
   const homeAvatarHTML = m.home_avatar
-    ? '<img src="' + escapeHtml(m.home_avatar) + '" alt="' + escapeHtml(m.home_name) + '" onerror="this.style.display='none';this.parentElement.textContent=this.parentElement.dataset.fallback||'??'"/>'
+    ? `<img src="${escapeHtml(m.home_avatar)}" alt="${escapeHtml(m.home_name)}" onerror="this.style.display='none';this.parentElement.textContent=this.parentElement.dataset.fallback||'??'"/>`
     : escapeHtml(m.home_initials || '??');
 
   const awayAvatarHTML = m.away_avatar
-    ? '<img src="' + escapeHtml(m.away_avatar) + '" alt="' + escapeHtml(m.away_name) + '" onerror="this.style.display='none';this.parentElement.textContent=this.parentElement.dataset.fallback||'??'"/>'
+    ? `<img src="${escapeHtml(m.away_avatar)}" alt="${escapeHtml(m.away_name)}" onerror="this.style.display='none';this.parentElement.textContent=this.parentElement.dataset.fallback||'??'"/>`
     : escapeHtml(m.away_initials || '??');
 
   // Match Status Tag (Live / Delayed / Finished / Regular)
