@@ -523,6 +523,7 @@ def get_matches(
                has_value, value_side, value_edge,
                fav_side, fav_prob, fav_odds, fav_ev,
                in_sitemap, is_finished, finished_at,
+               winner_side, final_score, fav_won,
                created_at, updated_at
         FROM matches
         {where_clause}
