@@ -318,16 +318,29 @@ def fetch_match_data(session: requests.Session, url: str) -> Optional[Dict[str, 
 
 
 def fetch_sitemap_urls() -> List[str]:
-    resp = requests.get(SITEMAP_URL, headers=HEADERS, timeout=20)
-    resp.raise_for_status()
+    session = requests.Session()
+    session.trust_env = False
+    for attempt in range(3):
+        try:
+            resp = session.get(SITEMAP_URL, headers=HEADERS, timeout=25)
+            resp.raise_for_status()
+            root = ET.fromstring(resp.content)
+            namespaces = {"sm": "http://www.sitemaps.org/schemas/sitemap/0.9"}
+            locs = []
+            for elem in root.findall(".//sm:loc", namespaces):
+                if elem.text and elem.text.strip():
+                    locs.append(elem.text.strip())
+            if not locs:
+                for elem in root.findall(".//loc"):
+                    if elem.text and elem.text.strip():
+                        locs.append(elem.text.strip())
+            if locs:
+                return locs
+        except Exception as e:
+            logger.warning(f"Sitemap fetch attempt {attempt + 1}/3 note: {e}")
+            time.sleep(1.5)
 
-    root = ET.fromstring(resp.content)
-    namespaces = {"sm": "http://www.sitemaps.org/schemas/sitemap/0.9"}
-    locs = []
-    for elem in root.findall(".//sm:loc", namespaces):
-        if elem.text and elem.text.strip():
-            locs.append(elem.text.strip())
-    return locs
+    raise RuntimeError("Failed to fetch sitemap from StatsArena after 3 attempts")
 
 
 async def run_scraper_pipeline() -> Dict[str, Any]:
@@ -384,6 +397,7 @@ async def run_scraper_pipeline() -> Dict[str, Any]:
         logger.info(f"Archived {finished_moved} completed matches to finished section.")
 
     session = requests.Session()
+    session.trust_env = False
     adapter = requests.adapters.HTTPAdapter(pool_connections=12, pool_maxsize=12, max_retries=2)
     session.mount('https://', adapter)
     session.headers.update(HEADERS)
