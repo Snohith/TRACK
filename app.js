@@ -181,6 +181,7 @@ function switchView(view) {
   if (dateFilterWrap) dateFilterWrap.style.display = view === 'finished' ? 'none' : 'block';
 
   if (view === 'finished') {
+    updateFinishedDateDropdown();
     renderFinishedAnalytics();
   }
 
@@ -202,6 +203,46 @@ function setFinishedCategory(cat) {
 
   renderFinishedAnalytics();
   refreshCurrentView();
+}
+
+// Finished Matches Single-Date Switcher (e.g. 'all', 'Aug 29', 'Aug 30')
+function setFinishedDate(dateStr) {
+  state.finishedDateFilter = dateStr;
+
+  const container = document.getElementById('finishedDateOptions');
+  if (container) {
+    const btns = container.querySelectorAll('.fin-date-btn');
+    btns.forEach(b => {
+      const bDate = b.textContent.trim();
+      b.classList.toggle('active', (dateStr === 'all' && bDate === 'All Dates') || bDate === dateStr);
+    });
+  }
+
+  renderFinishedAnalytics();
+  refreshCurrentView();
+}
+
+// Populate Single-Date filter buttons in Finished Matches view dynamically
+function updateFinishedDateDropdown() {
+  const container = document.getElementById('finishedDateOptions');
+  if (!container) return;
+
+  const finList = state.finishedMatchesCache[state.sport] || [];
+  const dateSet = new Set();
+  finList.forEach(m => {
+    const dt = getMatchISTDate(m.start_timestamp);
+    if (dt) dateSet.add(dt);
+  });
+
+  const dates = Array.from(dateSet).sort((a, b) => b.localeCompare(a));
+
+  let html = `<button class="fin-date-btn ${state.finishedDateFilter === 'all' ? 'active' : ''}" onclick="setFinishedDate('all')">All Dates</button>`;
+  dates.forEach(d => {
+    const isActive = state.finishedDateFilter === d ? 'active' : '';
+    html += `<button class="fin-date-btn ${isActive}" onclick="setFinishedDate('${d}')">${d}</button>`;
+  });
+
+  container.innerHTML = html;
 }
 
 // Value Bet Sort Controller (High/Low Value or Soonest)
@@ -233,6 +274,10 @@ function switchSport(sport) {
   if (leagueSelect) leagueSelect.value = 'all';
 
   updateLeagueDropdown();
+  if (state.currentView === 'finished') {
+    updateFinishedDateDropdown();
+    renderFinishedAnalytics();
+  }
   refreshCurrentView();
 }
 
@@ -352,11 +397,36 @@ async function fetchMatches() {
   }
 }
 
-// Compute and Render Finished Matches Analytics & Realized ROI
+// Extract Indian Standard Time (IST) Date string (e.g. 'Aug 29', 'Aug 30')
+function getMatchISTDate(isoOrTimestamp) {
+  if (!isoOrTimestamp) return null;
+  const date = typeof isoOrTimestamp === 'number' 
+    ? (isoOrTimestamp > 1e11 ? new Date(isoOrTimestamp) : new Date(isoOrTimestamp * 1000)) 
+    : new Date(isoOrTimestamp);
+  if (isNaN(date.getTime())) return null;
+
+  try {
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Kolkata',
+      month: 'short',
+      day: 'numeric'
+    }).format(date);
+  } catch (e) {
+    return null;
+  }
+}
+
+// Compute and Render Finished Matches Analytics & Realized ROI (with Single-Date Support)
 function renderFinishedAnalytics() {
   const finTennis = state.finishedMatchesCache.tennis || [];
   const finFootball = state.finishedMatchesCache.football || [];
-  const allFin = state.sport === 'tennis' ? finTennis : (state.sport === 'football' ? finFootball : [...finTennis, ...finFootball]);
+  const rawSportFin = state.sport === 'tennis' ? finTennis : (state.sport === 'football' ? finFootball : [...finTennis, ...finFootball]);
+
+  // Filter by selected single date first if specified
+  let allFin = rawSportFin;
+  if (state.finishedDateFilter && state.finishedDateFilter !== 'all') {
+    allFin = rawSportFin.filter(m => getMatchISTDate(m.start_timestamp) === state.finishedDateFilter);
+  }
 
   const favMatches = allFin.filter(m => {
     const topProb = Math.max(m.fav_prob || 0, m.home_prob || 0, m.away_prob || 0, m.draw_prob || 0);
@@ -371,18 +441,19 @@ function renderFinishedAnalytics() {
   let activeCategoryMatches = [];
   let categoryBadgeText = '';
   let subLabelText = '';
+  const dateSuffix = (state.finishedDateFilter && state.finishedDateFilter !== 'all') ? ` · ${state.finishedDateFilter}` : '';
 
   if (state.finishedCategory === 'fav51') {
     activeCategoryMatches = favMatches;
-    categoryBadgeText = 'Strategy: Favorites (≥51%)';
+    categoryBadgeText = `Strategy: Favorites (≥51%)${dateSuffix}`;
     subLabelText = 'Favorites (≥51%)';
   } else if (state.finishedCategory === 'under51') {
     activeCategoryMatches = nonFavMatches;
-    categoryBadgeText = 'Strategy: Non-Favorites (<51% Leftovers)';
+    categoryBadgeText = `Strategy: Non-Favorites (<51% Leftovers)${dateSuffix}`;
     subLabelText = 'Non-Favorites (<51%)';
   } else {
     activeCategoryMatches = allFin;
-    categoryBadgeText = 'Strategy: All Matches (No Filter)';
+    categoryBadgeText = `Strategy: All Matches (No Filter)${dateSuffix}`;
     subLabelText = 'All Tracked Matches';
   }
 
@@ -448,6 +519,11 @@ function processAndRenderMatches(rawList) {
   if (state.currentView === 'value') {
     list = list.filter(m => m.has_value === 1);
   } else if (state.currentView === 'finished') {
+    // 1. Single Date Filter for Finished Matches
+    if (state.finishedDateFilter && state.finishedDateFilter !== 'all') {
+      list = list.filter(m => getMatchISTDate(m.start_timestamp) === state.finishedDateFilter);
+    }
+    // 2. Category Filter (Favorites >=51% vs Non-Favorites <51% vs All)
     if (state.finishedCategory === 'fav51') {
       list = list.filter(m => {
         const topProb = Math.max(m.fav_prob || 0, m.home_prob || 0, m.away_prob || 0, m.draw_prob || 0);
@@ -986,7 +1062,8 @@ function updateSummary() {
     summaryEl.textContent = `Showing ${count} Value Bet ${sportName} matches (Sorted by ${sortDesc})`;
   } else if (state.currentView === 'finished') {
     const catDesc = state.finishedCategory === 'fav51' ? 'Favorites ≥51%' : (state.finishedCategory === 'under51' ? 'Non-Favorites <51%' : 'All Matches');
-    summaryEl.textContent = `Showing ${count} Finished ${sportName} matches (${catDesc})`;
+    const dateDesc = (state.finishedDateFilter && state.finishedDateFilter !== 'all') ? ` · ${state.finishedDateFilter}` : '';
+    summaryEl.textContent = `Showing ${count} Finished ${sportName} matches (${catDesc}${dateDesc})`;
   } else {
     summaryEl.textContent = `Showing ${count} Live & Upcoming ${sportName} matches`;
   }
