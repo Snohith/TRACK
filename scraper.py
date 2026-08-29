@@ -398,23 +398,15 @@ async def run_scraper_pipeline() -> Dict[str, Any]:
     scraper_live_state["phase"] = "saving"
     scraper_live_state["status_text"] = "Saving match records to database..."
 
-    new_count = 0
-    updated_count = 0
-    errors_count = 0
+    valid_results = [r for r in results if r and isinstance(r, dict)]
+    errors_count = len(results) - len(valid_results)
 
-    for res in results:
-        if res and isinstance(res, dict):
-            try:
-                is_new = database.upsert_match(res)
-                if is_new:
-                    new_count += 1
-                else:
-                    updated_count += 1
-            except Exception as e:
-                errors_count += 1
-                logger.error(f"DB upsert error for {res.get('id', '?')}: {e}")
-        else:
-            errors_count += 1
+    try:
+        new_count, updated_count = database.upsert_matches_batch(valid_results)
+    except Exception as e:
+        logger.error(f"Batch upsert error: {e}")
+        new_count, updated_count = 0, 0
+        errors_count += len(valid_results)
 
     duration = round(time.time() - start_time, 2)
     scraped = new_count + updated_count

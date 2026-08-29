@@ -7,10 +7,11 @@ from typing import List, Dict, Any, Optional
 DB_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "matches.db")
 
 def get_connection():
-    conn = sqlite3.connect(DB_FILE, timeout=10)
+    conn = sqlite3.connect(DB_FILE, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA busy_timeout=5000")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute("PRAGMA busy_timeout=15000")
     return conn
 
 def init_db():
@@ -234,6 +235,164 @@ def upsert_match(match_data: Dict[str, Any]) -> bool:
 
         conn.commit()
         return not exists
+
+def upsert_matches_batch(matches_list: List[Dict[str, Any]]) -> tuple[int, int]:
+    """
+    Atomically upsert a batch of matches inside a single database transaction.
+    Returns (new_count, updated_count).
+    """
+    if not matches_list:
+        return 0, 0
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    new_count = 0
+    updated_count = 0
+
+    with get_connection() as conn:
+        cursor = conn.cursor()
+
+        # Pre-fetch existing IDs
+        cursor.execute("SELECT id FROM matches")
+        existing_ids = set(r[0] for r in cursor.fetchall())
+
+        prepared_batch = []
+        for match_data in matches_list:
+            mid = match_data.get("id")
+            if not mid:
+                continue
+
+            exists = mid in existing_ids
+            if exists:
+                updated_count += 1
+            else:
+                new_count += 1
+
+            hp = float(match_data.get("home_prob") or 0.0)
+            ap = float(match_data.get("away_prob") or 0.0)
+            dp = float(match_data.get("draw_prob") or 0.0)
+            mh = float(match_data.get("market_home") or 0.0)
+            ma = float(match_data.get("market_away") or 0.0)
+            md = float(match_data.get("market_draw") or 0.0)
+            sport = match_data.get("sport", "tennis")
+
+            fav_side, fav_prob, fav_odds = None, 0.0, 0.0
+            if sport == "tennis" or not dp:
+                if hp >= ap and hp > 0:
+                    fav_side, fav_prob, fav_odds = "home", hp, mh
+                elif ap > hp:
+                    fav_side, fav_prob, fav_odds = "away", ap, ma
+            else:
+                max_p = max(hp, dp, ap)
+                if max_p > 0:
+                    if max_p == hp:
+                        fav_side, fav_prob, fav_odds = "home", hp, mh
+                    elif max_p == ap:
+                        fav_side, fav_prob, fav_odds = "away", ap, ma
+                    else:
+                        fav_side, fav_prob, fav_odds = "draw", dp, md
+
+            fav_ev = round(((fav_prob / 100.0) * fav_odds - 1.0) * 100.0, 1) if (fav_prob > 0 and fav_odds > 1.0) else 0.0
+
+            prepared_batch.append({
+                "id": mid,
+                "url": match_data.get("url", ""),
+                "sport": sport,
+                "league": match_data.get("league", ""),
+                "location": match_data.get("location", ""),
+                "home_name": match_data.get("home_name", "Home"),
+                "away_name": match_data.get("away_name", "Away"),
+                "home_initials": match_data.get("home_initials", "H"),
+                "away_initials": match_data.get("away_initials", "A"),
+                "home_avatar": match_data.get("home_avatar", ""),
+                "away_avatar": match_data.get("away_avatar", ""),
+                "start_time": match_data.get("start_time", ""),
+                "start_timestamp": match_data.get("start_timestamp", 0),
+                "home_prob": match_data.get("home_prob"),
+                "draw_prob": match_data.get("draw_prob"),
+                "away_prob": match_data.get("away_prob"),
+                "market_home": match_data.get("market_home"),
+                "market_draw": match_data.get("market_draw"),
+                "market_away": match_data.get("market_away"),
+                "fair_home": match_data.get("fair_home"),
+                "fair_draw": match_data.get("fair_draw"),
+                "fair_away": match_data.get("fair_away"),
+                "has_value": match_data.get("has_value", 0),
+                "value_side": match_data.get("value_side"),
+                "value_edge": match_data.get("value_edge", 0.0),
+                "fav_side": fav_side,
+                "fav_prob": fav_prob,
+                "fav_odds": fav_odds,
+                "fav_ev": fav_ev,
+                "in_sitemap": match_data.get("in_sitemap", 1),
+                "is_finished": match_data.get("is_finished", 0),
+                "finished_at": match_data.get("finished_at"),
+                "raw_json": match_data.get("raw_json", "{}"),
+                "created_at": None if exists else now_iso,
+                "updated_at": now_iso
+            })
+
+        cursor.executemany("""
+        INSERT INTO matches (
+            id, url, sport, league, location,
+            home_name, away_name, home_initials, away_initials,
+            home_avatar, away_avatar, start_time, start_timestamp,
+            home_prob, draw_prob, away_prob,
+            market_home, market_draw, market_away,
+            fair_home, fair_draw, fair_away,
+            has_value, value_side, value_edge,
+            fav_side, fav_prob, fav_odds, fav_ev,
+            in_sitemap, is_finished, finished_at,
+            raw_json, created_at, updated_at
+        ) VALUES (
+            :id, :url, :sport, :league, :location,
+            :home_name, :away_name, :home_initials, :away_initials,
+            :home_avatar, :away_avatar, :start_time, :start_timestamp,
+            :home_prob, :draw_prob, :away_prob,
+            :market_home, :market_draw, :market_away,
+            :fair_home, :fair_draw, :fair_away,
+            :has_value, :value_side, :value_edge,
+            :fav_side, :fav_prob, :fav_odds, :fav_ev,
+            :in_sitemap, :is_finished, :finished_at,
+            :raw_json, :created_at, :updated_at
+        )
+        ON CONFLICT(id) DO UPDATE SET
+            url = excluded.url,
+            sport = excluded.sport,
+            league = excluded.league,
+            location = excluded.location,
+            home_name = excluded.home_name,
+            away_name = excluded.away_name,
+            home_initials = excluded.home_initials,
+            away_initials = excluded.away_initials,
+            home_avatar = excluded.home_avatar,
+            away_avatar = excluded.away_avatar,
+            start_time = excluded.start_time,
+            start_timestamp = excluded.start_timestamp,
+            home_prob = excluded.home_prob,
+            draw_prob = excluded.draw_prob,
+            away_prob = excluded.away_prob,
+            market_home = excluded.market_home,
+            market_draw = excluded.market_draw,
+            market_away = excluded.market_away,
+            fair_home = excluded.fair_home,
+            fair_draw = excluded.fair_draw,
+            fair_away = excluded.fair_away,
+            has_value = excluded.has_value,
+            value_side = excluded.value_side,
+            value_edge = excluded.value_edge,
+            fav_side = excluded.fav_side,
+            fav_prob = excluded.fav_prob,
+            fav_odds = excluded.fav_odds,
+            fav_ev = excluded.fav_ev,
+            in_sitemap = excluded.in_sitemap,
+            is_finished = excluded.is_finished,
+            raw_json = excluded.raw_json,
+            updated_at = excluded.updated_at
+        """, prepared_batch)
+
+        conn.commit()
+
+    return new_count, updated_count
 
 def purge_legacy_finished_matches(active_sitemap_ids: set) -> int:
     """Purges old completed matches that were already absent from the sitemap before this tracking reset."""

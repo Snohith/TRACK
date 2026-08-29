@@ -552,7 +552,9 @@ function getShortSurname(name) {
  */
 function formatIST12Hour(isoOrTimestamp) {
   if (!isoOrTimestamp) return 'Time TBA';
-  const date = typeof isoOrTimestamp === 'number' ? new Date(isoOrTimestamp * 1000) : new Date(isoOrTimestamp);
+  const date = typeof isoOrTimestamp === 'number' 
+    ? (isoOrTimestamp > 1e11 ? new Date(isoOrTimestamp) : new Date(isoOrTimestamp * 1000)) 
+    : new Date(isoOrTimestamp);
   if (isNaN(date.getTime())) return 'Time TBA';
 
   try {
